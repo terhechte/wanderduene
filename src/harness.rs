@@ -1,8 +1,7 @@
-use dune_base::*;
 use std::error::Error;
 use std::io;
 use std::path::PathBuf;
-//use org_post::OrgPost;
+use std::collections::HashMap;
 
 /*struct TestPage;
 
@@ -26,7 +25,7 @@ tasks:
 - should I slice everything into the groups? i.e. instead of &Vec<BlogPost> I do &[BlogPost] ?
 */
 
-struct BlogPost {
+/*struct BlogPost {
     title: String,
 }
 
@@ -36,7 +35,57 @@ impl BlogPost {
             title: "yeah".to_string(),
         }
     }
+}*/
+
+pub struct BlogPost {
+    pub identifier: String,
+    pub path: String,
+    pub title: String,
+    pub released: DunePostTime,
+    pub contents: String,
+    pub tags: Vec<String>,
+    pub keywords: Vec<String>,
+    pub description: String,
+    pub enabled: bool
 }
+
+impl BlogPost {
+    pub fn new(title: String, year: String, month: String, day: String) -> BlogPost {
+        BlogPost {
+            identifier: title.clone(),
+            path: title.clone(),
+            title: title.clone(),
+            released: DunePostTime {
+                year: year,
+                month: month,
+                day: day,
+                values: (0, 0, 0),
+                timestamp: 0
+            },
+            contents: title.clone(),
+            tags: vec![title.clone()],
+            keywords: Vec::new(),
+            description: title.clone(),
+            enabled: true
+        }
+    }
+}
+
+
+#[derive(Copy, Clone)]
+pub enum DuneBaseAggType {
+    Year, Month, Day, Tag, Keyword, Enabled
+}
+
+pub struct DunePostTime {
+    pub year: String,
+    pub month: String,
+    pub day: String,
+    pub values: (i32, i32, i32),
+    pub timestamp: i64
+}
+
+
 
 struct Database {
     posts: Vec<BlogPost>
@@ -44,13 +93,18 @@ struct Database {
 
 impl Database {
     fn new() -> Database {
+        let posts = vec![BlogPost::new("test1".to_owned(), "2017".to_owned(), "01".to_owned(), "14".to_owned()),
+                         BlogPost::new("test2".to_owned(), "2016".to_owned(), "02".to_owned(), "24".to_owned()),
+                         BlogPost::new("test3".to_owned(), "2015".to_owned(), "03".to_owned(), "31".to_owned()),
+        ];
         Database {
-            posts: vec![BlogPost::new(), BlogPost::new()],
+            posts: posts,
         }
     }
     fn builder(&self) -> Builder {
         let path = PathBuf::from("html");
-        Builder::new(path, &self.posts)
+        let v8: Vec<&BlogPost> = self.posts.iter().collect();
+        Builder::new(path, v8)
     }
 }
 
@@ -68,19 +122,22 @@ trait DuneBuildFlatter<'a> {
 
 trait DuneBuildWriter {
     fn write_overview(self) -> io::Result<()>;
-    fn write_posts(self) -> io::Result<()>;
     fn write_index(self) -> io::Result<()>;
+}
+
+trait DuneBuildCollector<'a> {
+    fn with_posts<F>(self, action: F) -> Self where F: (Fn(&'a BlogPost, i32, i32, &PathBuf) -> ());
 }
 
 // Types
 
 struct Builder<'a> {
-    payload: &'a Vec<BlogPost>,
+    payload: Vec<&'a BlogPost>,
     path: PathBuf
 }
 
 impl<'a> Builder<'a> {
-    fn new(path: PathBuf, posts: &'a Vec<BlogPost>) -> Builder {
+    fn new(path: PathBuf, posts: Vec<&'a BlogPost>) -> Builder {
         Builder {
             payload: posts,
             path: path
@@ -90,8 +147,30 @@ impl<'a> Builder<'a> {
 
 impl<'a> DuneBuildMapper<'a> for Builder<'a> {
     fn group_by(self, key: DuneBaseAggType) -> GroupedDuneBuilder<'a> {
+        //let grouped = self.payload.iter().fold(HashMap::<String, Vec<&BlogPost>>::new(), |mut acc: HashMap<String, Vec<&BlogPost>>, elm: &BlogPost| {
+        let grouped = self.payload.iter().fold(HashMap::<String, Vec<&BlogPost>>::new(), |mut acc, elm| {
+            {
+                // FIXME: Move this logic as an internal impl on DuneBaseAggType?
+                let key = match key {
+                    DuneBaseAggType::Year => elm.released.year.to_string(),
+                    DuneBaseAggType::Month => elm.released.month.to_string(),
+                    DuneBaseAggType::Day => elm.released.day.to_string(),
+                    _ => "fail".to_string()
+                };
+                let mut entry = acc.entry(key).or_insert(
+                    Vec::new(),
+                );
+                entry.push(elm);
+            }
+            acc
+        });
+        // FIXME: Can I map this?
+        let mut payload: Vec<(String, Vec<&'a BlogPost>)> = Vec::new();
+        for (key, posts) in grouped {
+            payload.push((key, posts));
+        }
         GroupedDuneBuilder {
-            payload: vec![("test".to_string(), self.payload)],
+            payload: payload,
             path: self.path.clone()
         }
     }
@@ -100,15 +179,32 @@ impl<'a> DuneBuildMapper<'a> for Builder<'a> {
     }
 }
 
+impl<'a> DuneBuildCollector<'a> for Builder<'a> {
+    fn with_posts<F>(self, action: F) -> Self where F: (Fn(&'a BlogPost, i32, i32, &PathBuf) -> ()) {
+        let count = self.payload.len();
+        for (current, post) in self.payload.iter().enumerate() {
+            action(post, current as i32, count as i32, &self.path);
+        }
+        self
+    }
+}
+
 impl<'a> DuneBuildWriter for Builder<'a> {
     fn write_overview(self) -> io::Result<()> {
-        println!("writing overview at {:?}", &self.path);
+        let mut path = self.path;
+        path.push("overview.html");
+        println!("writing overview at {:?}", &path);
         Ok(())
     }
-    fn write_posts(self) -> io::Result<()> {
-        println!("writing posts at {:?}", &self.path);
+    /*fn write_posts(self) -> io::Result<()> {
+        for post in self.payload {
+            let mut path = self.path.clone();
+            path.push(&post.identifier);
+            path.push("index.html");
+            println!("writing posts at {:?}", &path);
+        }
         Ok(())
-    }
+    }*/
     fn write_index(self) -> io::Result<()> {
         println!("writing index at {:?}", &self.path);
         Ok(())
@@ -116,7 +212,7 @@ impl<'a> DuneBuildWriter for Builder<'a> {
 }
 
 struct GroupedDuneBuilder<'a> {
-    payload: Vec<(String, &'a Vec<BlogPost>)>,
+    payload: Vec<(String, Vec<&'a BlogPost>)>,
     path: PathBuf,
 }
 
@@ -126,7 +222,7 @@ impl<'a> DuneBuildFlatter<'a> for GroupedDuneBuilder<'a> {
         for (key, posts) in self.payload.iter() {
             let mut path = self.path.clone();
             path.push(&key);
-            let inner_builder = Builder::new(path, posts);
+            let inner_builder = Builder::new(path, posts.clone());
             action(inner_builder, key.to_owned());
         }
         self
@@ -135,11 +231,9 @@ impl<'a> DuneBuildFlatter<'a> for GroupedDuneBuilder<'a> {
 
 impl<'a> DuneBuildWriter for GroupedDuneBuilder<'a> {
     fn write_overview(self) -> io::Result<()> {
-        println!("writing overview at {:?}", &self.path);
-        Ok(())
-    }
-    fn write_posts(self) -> io::Result<()> {
-        println!("writing posts at {:?}", &self.path);
+        let mut path = self.path;
+        path.push("overview.html");
+        println!("writing overview at {:?}", &path);
         Ok(())
     }
     fn write_index(self) -> io::Result<()> {
@@ -147,6 +241,16 @@ impl<'a> DuneBuildWriter for GroupedDuneBuilder<'a> {
         Ok(())
     }
 }
+
+/*impl<'a> DuneBuildCollector<'a> for GroupedDuneBuilder<'a> {
+    fn with_posts<F>(self, action: F) -> Self where F: (Fn(&'a BlogPost, i32, i32, &PathBuf) -> ()) {
+        let count = self.payload.len();
+        for (current, post) in self.payload.iter().enumerate() {
+            action(post, current, count, &self.path);
+        }
+        self
+    }
+}*/
 
 struct PagedDuneBuilder;
 
@@ -164,7 +268,16 @@ fn testing() {
         .with(|builder, group| {
             builder.group_by(DuneBaseAggType::Month)
                 .with(|builder, group| {
-                    builder.write_posts().unwrap();
+                    builder.group_by(DuneBaseAggType::Day)
+                        .with(|builder, group| {
+                            builder.with_posts(|post, current, total, path| {
+                                // FIXME: have a writer here that can be used to write here
+                                let mut path = path.clone();
+                                path.push(&post.identifier);
+                                path.push("index.html");
+                                println!("writing posts at {:?}", &path);
+                            }).write_overview().unwrap();
+                        }).write_overview().unwrap();
                 }).write_overview().unwrap();
         }).write_overview().unwrap();
 }
