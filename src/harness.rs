@@ -78,7 +78,7 @@ impl Database {
 
 trait DuneBuildMapper<'a> {
     fn group_by(self, key: DuneBaseAggType) -> GroupedDuneBuilder<'a>;
-    fn paged(self) -> PagedDuneBuilder;
+    fn paged(self, i32) -> PagedDuneBuilder<'a>;
 }
 
 trait DuneBuildFlatter<'a> {
@@ -93,6 +93,10 @@ trait DuneBuildWriter {
 
 trait DuneBuildCollector<'a> {
     fn with_posts<F>(self, action: F) -> Self where F: (Fn(&'a BlogPost, i32, i32, &PathBuf) -> ());
+}
+
+trait DunePathBuilder {
+    fn push<T: AsRef<str>>(mut self, path: T) -> Self;
 }
 
 // Types
@@ -140,8 +144,39 @@ impl<'a> DuneBuildMapper<'a> for Builder<'a> {
             path: self.path.clone()
         }
     }
-    fn paged(self) -> PagedDuneBuilder {
-        PagedDuneBuilder {}
+
+    fn paged(self, per_page: i32) -> PagedDuneBuilder<'a> {
+        let mut result: Vec<DunePage> = Vec::new();
+        let mut counter: i32 = 0;
+        loop {
+            let cloned = self.payload.clone();
+            let entries: Vec<&BlogPost> = cloned
+                .into_iter()
+                .skip((counter * per_page) as usize)
+                .take(per_page as usize)
+                .collect();
+            if entries.is_empty() {
+                break;
+            }
+            let page = DunePage {
+                page: counter + 1,
+                previous_page: match counter {
+                    0 => None,
+                    _ => Some(counter),
+                },
+                next_page: match (((counter + 1) * per_page) as i32) < ((self.payload.len()) as i32) {
+                    true => Some(counter + 2),
+                    false => None,
+                },
+                posts: entries
+            };
+            result.push(page);
+            counter += 1;
+        }
+        // for entry in &result {
+        //     println!("page {}, {:?} {:?}", entry.number, entry.previous_page, entry.next_page);
+        // }
+        PagedDuneBuilder::new(self.path.clone(), result)
     }
 }
 
@@ -151,6 +186,13 @@ impl<'a> DuneBuildCollector<'a> for Builder<'a> {
         for (current, post) in self.payload.iter().enumerate() {
             action(post, current as i32, count as i32, &self.path);
         }
+        self
+    }
+}
+
+impl<'a> DunePathBuilder for Builder<'a> {
+    fn push<T: AsRef<str>>(mut self, path: T) -> Self {
+        self.path.push(path.as_ref());
         self
     }
 }
@@ -200,7 +242,53 @@ impl<'a> DuneBuildWriter for GroupedDuneBuilder<'a> {
     }
 }
 
-struct PagedDuneBuilder;
+struct DunePage<'a> {
+    page: i32,
+    previous_page: Option<i32>,
+    next_page: Option<i32>,
+    posts: Vec<&'a BlogPost>
+}
+
+struct PagedDuneBuilder<'a> {
+    payload: Vec<DunePage<'a>>,
+    path: PathBuf,
+}
+
+impl<'a> PagedDuneBuilder<'a> {
+    fn new(path: PathBuf, payload: Vec<DunePage<'a>>) -> PagedDuneBuilder {
+        PagedDuneBuilder {
+            payload,
+            path
+        }
+    }
+}
+
+impl<'a> DuneBuildFlatter<'a> for PagedDuneBuilder<'a> {
+    type CategoryType = i32;
+    fn with<F>(self, action: F) -> Self where F: (Fn(Builder<'a>, Self::CategoryType) -> ()) {
+        for page in self.payload.iter() {
+            let mut path = self.path.clone();
+            let key = &format!("{}", page.page);
+            path.push(&key);
+            let inner_builder = Builder::new(path, page.posts.clone());
+            action(inner_builder, page.page);
+        }
+        self
+    }
+}
+
+impl<'a> DuneBuildWriter for PagedDuneBuilder<'a> {
+    fn write_overview(self) -> io::Result<()> {
+        let mut path = self.path;
+        path.push("overview.html");
+        println!("writing overview at {:?}", &path);
+        Ok(())
+    }
+    fn write_index(self) -> io::Result<()> {
+        println!("writing index at {:?}", &self.path);
+        Ok(())
+    }
+}
 
 #[test]
 fn testing() {
@@ -222,4 +310,12 @@ fn testing() {
                         }).write_overview().unwrap();
                 }).write_overview().unwrap();
         }).write_overview().unwrap();
+
+
+    let builder = db.builder();
+    builder.push("latest-posts")
+        .paged(1)
+        .with(|builder, page| {
+            builder.write_index().unwrap();
+        });
 }
