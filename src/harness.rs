@@ -172,7 +172,6 @@ trait DuneBuildWriter {
 }
 
 trait DuneBuildCollector<'a> {
-    //fn with_posts<'b, F>(self, action: F) -> Self where 'a: 'b, F: (Fn(&'b BlogPost, i32, i32, &PathBuf) -> ());
     fn collected(&self) -> Vec<&BlogPost>;
     fn into_collected(&self) -> Vec<BlogPost> {
         self.collected().into_iter().map(|post|post.clone()).collect()
@@ -307,14 +306,12 @@ impl<'a> DuneBuildWriter for Builder<'a> {
     fn write_overview(self) -> Self {
         let mut path = self.path.clone();
         path.push("overview.html");
-        //println!("writing overview at {:?}", &path);
         let mut items: Vec<DuneAction> = vec![DuneAction::WriteOverview(path, self.into_collected())];
         self.parent.receive(items);
         self
     }
 
     fn write_index(self) -> Self {
-        //println!("writing index at {:?}", &self.path);
         let mut path = self.path.clone();
         path.push("index.html");
         let mut items: Vec<DuneAction> = vec![DuneAction::WriteIndex(path, self.into_collected())];
@@ -382,20 +379,16 @@ impl<'a> DuneBuildWriter for GroupedDuneBuilder<'a> {
     fn write_overview(self) -> Self {
         let mut path = self.path.clone();
         path.push("overview.html");
-        {
-            let collected = self.into_collected();
-            let mut items: Vec<DuneAction> = vec![DuneAction::WriteOverview(self.path.clone(), collected.clone())];
-            self.parent.receive(items);
-        }
+        let collected = self.into_collected();
+        let mut items: Vec<DuneAction> = vec![DuneAction::WriteOverview(self.path.clone(), collected.clone())];
+        self.parent.receive(items);
         self
     }
 
     fn write_index(self) -> Self {
-        {
-            let collected = self.into_collected();
-            let mut items: Vec<DuneAction> = vec![DuneAction::WriteIndex(self.path.clone(), collected.clone())];
-            self.parent.receive(items);
-        }
+        let collected = self.into_collected();
+        let mut items: Vec<DuneAction> = vec![DuneAction::WriteIndex(self.path.clone(), collected.clone())];
+        self.parent.receive(items);
         self
     }
 
@@ -448,20 +441,16 @@ impl<'a> DuneBuildWriter for PagedDuneBuilder<'a> {
     fn write_overview(self) -> Self {
         let mut path = self.path.clone();
         path.push("overview.html");
-        {
-            let collected = self.into_collected();
-            let mut items: Vec<DuneAction> = vec![DuneAction::WriteOverview(self.path.clone(), collected.clone())];
-            self.parent.receive(items);
-        }
+        let collected = self.into_collected();
+        let mut items: Vec<DuneAction> = vec![DuneAction::WriteOverview(self.path.clone(), collected.clone())];
+        self.parent.receive(items);
         self
     }
 
     fn write_index(self) -> Self {
-        {
-            let collected = self.into_collected();
-            let mut items: Vec<DuneAction> = vec![DuneAction::WriteIndex(self.path.clone(), collected.clone())];
-            self.parent.receive(items);
-        }
+        let collected = self.into_collected();
+        let mut items: Vec<DuneAction> = vec![DuneAction::WriteIndex(self.path.clone(), collected.clone())];
+        self.parent.receive(items);
         self
     }
 
