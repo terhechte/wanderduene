@@ -2,23 +2,8 @@ use std::error::Error;
 use std::io;
 use std::path::PathBuf;
 use std::collections::HashMap;
+use std::rc::Rc;
 
-
-/**
-FIXME:
-- Error Handling
-- Keywords
-- Tags
-- Unit Tests
-- htmlwriter
-- config
-- router: a trait that returns the absolute path for keyword, tag, post, year, year/month, year/month/day
-- the collection & parsing of items should happen on multiple threads possible with the rust go channels so that
-  even for large post bases, the parsing is fast
-- the writing of items could also happen on multiple threads, if the write actions are stored in a dependency tree,
-i.e. each folder for a year would be a new node in the tree, each month for each year a subnode of the respective tree node
-  then, we could paraellilize all years, and thend for each year all months
-*/
 
 pub struct BlogPost {
     pub identifier: String,
@@ -68,88 +53,55 @@ pub struct DunePostTime {
     pub timestamp: i64
 }
 
+pub struct DuneAggregationEntry {
+    identifier: String,
+    count: i32
+}
 
+trait Configuration {}
+
+struct DuneProject;
+
+trait BlogProvider {
+    fn posts(&self) -> Vec<BlogPost>;
+    fn projects(&self) -> Vec<DuneProject>;
+    fn tags(&self) -> Vec<DuneAggregationEntry>;
+    fn keywords(&self) -> Vec<DuneAggregationEntry>;
+}
 
 struct Database {
-    posts: Vec<BlogPost>
+    posts: Vec<BlogPost>,
+    projects: Vec<DuneProject>,
+    tags: Vec<DuneAggregationEntry>,
+    keywords: Vec<DuneAggregationEntry>,
+    configuration: Rc<Configuration>,
 }
 
-impl Database {
-    fn new() -> Database {
-        let posts = vec![BlogPost::new("test1".to_owned(), "2017".to_owned(), "01".to_owned(), "14".to_owned()),
-                         BlogPost::new("test2".to_owned(), "2016".to_owned(), "02".to_owned(), "24".to_owned()),
-                         BlogPost::new("test3".to_owned(), "2015".to_owned(), "03".to_owned(), "31".to_owned()),
-        ];
-        Database {
-            posts: posts,
+struct Dune {
+    database: Rc<Database>,
+}
+
+impl Dune {
+    fn new<Provider: BlogProvider>(configuration: Rc<Configuration>, provider: Provider) -> Dune {
+        Dune {
+            database: Rc::new(Database {
+                posts: provider.posts(),
+                projects: provider.projects(),
+                tags: provider.tags(),
+                keywords: provider.keywords(),
+                configuration: configuration
+            })
         }
     }
-}
 
-struct Dune<Config, Writer, Router>
-where Config: DuneConfigurator, Writer: DuneWriter<Config, Router>, Router: DuneRouter {
-    database: Database,
-    configuration: Config,
-    writer: Writer,
-    router: Router
-}
-
-impl<Config: DuneConfigurator, Writer: DuneWriter<Config, Router>, Router: DuneRouter> Dune<Config, Writer, Router>
-{
     fn builder(&self) -> Builder {
         let path = PathBuf::from("html");
         let posts: Vec<&BlogPost> = self.database.posts.iter().collect();
-        Builder::new(path, posts)
+        Builder::new(Rc::clone(&self.database), path, posts)
     }
 }
 
 // Traits
-
-/// Configuration is a trait with required fields and a base implementation.
-/// Individual users can, however, create their own implementation to have access
-/// to additional properties in the `DuneWriter` or `DuneRouter` implementations.
-trait DuneConfigurator {
-}
-
-trait DuneWriter<Config: DuneConfigurator, Router: DuneRouter> {
-    // A list of items displayed as a list
-    fn overview(&self, config: &Config, router: &Router, path: &PathBuf, posts: &[&BlogPost]) -> io::Result<()>;
-    // A list of possibly paged items. Displayed as a blog of contents
-    //fn index<'a>(&self, path: &PathBuf, page: &DunePage<'a>) -> io::Result<()>;
-    // A single post
-    //fn post(&self, path: &PathBuf, post: &BlogPost) -> io::Result<()>;
-}
-
-use std::marker::PhantomData;
-struct HTMLWriter<C, R> where C: DuneConfigurator, R: DuneRouter {
-    _phantom1: PhantomData<C>,
-    _phantom2: PhantomData<R>,
-}
-
-impl<C, R> HTMLWriter<C, R> where C: DuneConfigurator, R: DuneRouter {
-    fn new() -> HTMLWriter<C, R> {
-        HTMLWriter {
-            _phantom1: PhantomData,
-            _phantom2: PhantomData
-        }
-    }
-}
-
-impl<C, R> DuneWriter<C, R> for HTMLWriter<C, R>  where C: DuneConfigurator, R: DuneRouter {
-    fn overview(&self, config: &C, router: &R, path: &PathBuf, posts: &[&BlogPost]) -> io::Result<()> {
-        println!("writing overview with {} posts to {:?}", posts.len(), &path);
-        Ok(())
-    }
-
-    /*fn index<'b>(&self, path: &PathBuf, page: &DunePage<'b>) -> io::Result<()> {
-        println!("writing index-page with {} posts to {:?}", page.posts.len(), &path);
-        Ok(())
-    }
-    fn post(&self, path: &PathBuf, post: &BlogPost) -> io::Result<()> {
-        println!("writing post {} to {:?}", post.title, &path);
-        Ok(())
-    }*/
-}
 
 trait DuneRouter {
     fn route_post(post: &BlogPost) -> String;
@@ -185,14 +137,16 @@ trait DunePathBuilder {
 
 struct Builder<'a> {
     payload: Vec<&'a BlogPost>,
-    path: PathBuf
+    path: PathBuf,
+    database: Rc<Database>,
 }
 
 impl<'a> Builder<'a> {
-    fn new(path: PathBuf, posts: Vec<&'a BlogPost>) -> Builder {
+    fn new(database: Rc<Database>, path: PathBuf, posts: Vec<&'a BlogPost>) -> Builder {
         Builder {
             payload: posts,
-            path: path
+            path: path,
+            database: database
         }
     }
 }
@@ -221,10 +175,7 @@ impl<'a> DuneBuildMapper<'a> for Builder<'a> {
         for (key, posts) in grouped {
             payload.push((key, posts));
         }
-        GroupedDuneBuilder {
-            payload: payload,
-            path: self.path.clone()
-        }
+        GroupedDuneBuilder::new(Rc::clone(&self.database), self.path.clone(), payload)
     }
 
     fn paged(self, per_page: i32) -> PagedDuneBuilder<'a> {
@@ -255,10 +206,7 @@ impl<'a> DuneBuildMapper<'a> for Builder<'a> {
             result.push(page);
             counter += 1;
         }
-        // for entry in &result {
-        //     println!("page {}, {:?} {:?}", entry.number, entry.previous_page, entry.next_page);
-        // }
-        PagedDuneBuilder::new(self.path.clone(), result)
+        PagedDuneBuilder::new(Rc::clone(&self.database), self.path.clone(), result)
     }
 }
 
@@ -294,17 +242,28 @@ impl<'a> DuneBuildWriter for Builder<'a> {
 }
 
 struct GroupedDuneBuilder<'a> {
+    database: Rc<Database>,
     payload: Vec<(String, Vec<&'a BlogPost>)>,
     path: PathBuf,
+}
+
+impl<'a> GroupedDuneBuilder<'a> {
+    fn new(database: Rc<Database>, path: PathBuf, payload: Vec<(String, Vec<&'a BlogPost>)>) -> GroupedDuneBuilder<'a> {
+        GroupedDuneBuilder {
+            database,
+            payload,
+            path
+        }
+    }
 }
 
 impl<'a> DuneBuildFlatter<'a> for GroupedDuneBuilder<'a> {
     type CategoryType = String;
     fn with<F>(self, action: F) -> Self where F: (Fn(Builder<'a>, Self::CategoryType) -> ()) {
-        for (key, posts) in self.payload.iter() {
+        for &(ref key, ref posts) in self.payload.iter() {
             let mut path = self.path.clone();
             path.push(&key);
-            let inner_builder = Builder::new(path, posts.clone());
+            let inner_builder = Builder::new(Rc::clone(&self.database), path, posts.clone());
             action(inner_builder, key.to_owned());
         }
         self
@@ -332,13 +291,15 @@ struct DunePage<'a> {
 }
 
 struct PagedDuneBuilder<'a> {
+    database: Rc<Database>,
     payload: Vec<DunePage<'a>>,
     path: PathBuf,
 }
 
 impl<'a> PagedDuneBuilder<'a> {
-    fn new(path: PathBuf, payload: Vec<DunePage<'a>>) -> PagedDuneBuilder {
+    fn new(database: Rc<Database>, path: PathBuf, payload: Vec<DunePage<'a>>) -> PagedDuneBuilder {
         PagedDuneBuilder {
+            database,
             payload,
             path
         }
@@ -352,7 +313,7 @@ impl<'a> DuneBuildFlatter<'a> for PagedDuneBuilder<'a> {
             let mut path = self.path.clone();
             let key = &format!("{}", page.page);
             path.push(&key);
-            let inner_builder = Builder::new(path, page.posts.clone());
+            let inner_builder = Builder::new(Rc::clone(&self.database), path, page.posts.clone());
             action(inner_builder, page.page);
         }
         self
@@ -372,12 +333,32 @@ impl<'a> DuneBuildWriter for PagedDuneBuilder<'a> {
     }
 }
 
-//#[test]
+#[test]
 fn testing() {
 
-    struct AppventureConfig;
+    struct TestProvider {}
 
-    impl DuneConfigurator for AppventureConfig {}
+    impl BlogProvider for TestProvider {
+        fn posts(&self) -> Vec<BlogPost> {
+            let posts = vec![BlogPost::new("test1".to_owned(), "2017".to_owned(), "01".to_owned(), "14".to_owned()),
+                             BlogPost::new("test2".to_owned(), "2016".to_owned(), "02".to_owned(), "24".to_owned()),
+                             BlogPost::new("test3".to_owned(), "2015".to_owned(), "03".to_owned(), "31".to_owned()),
+            ];
+            posts
+        }
+
+        fn projects(&self) -> Vec<DuneProject> {
+            Vec::new()
+        }
+
+        fn tags(&self) -> Vec<DuneAggregationEntry> {
+            Vec::new()
+        }
+
+        fn keywords(&self) -> Vec<DuneAggregationEntry> {
+            Vec::new()
+        }
+    }
 
     struct TestingRouter;
     impl DuneRouter for TestingRouter {
@@ -391,15 +372,20 @@ fn testing() {
             "".to_owned()
         }
     }
-    let database = Database::new();
-    let writer: HTMLWriter<AppventureConfig, TestingRouter> = HTMLWriter::new();
-    let dune: Dune<AppventureConfig, HTMLWriter<AppventureConfig, TestingRouter>, TestingRouter> = Dune {
-        database: database,
-        configuration: AppventureConfig {},
-        writer: writer,
-        router: TestingRouter {}
-    };
-    let builder = dune.builder();
+
+    struct AppventureConfig {}
+    impl Configuration for AppventureConfig {}
+
+    let configuration = Rc::new(AppventureConfig {});
+    // This is so confusing. Doing `Database::new(Rc::clone(&configuration))`
+    // will fail. Putting it into its own line, works fine.
+    let cloned = Rc::clone(&configuration);
+    let provider = TestProvider {};
+
+
+    let db = Dune::new(cloned, provider);
+    let builder = db.builder();
+
     builder.group_by(DuneBaseAggType::Year)
         .with(|builder, group| {
             builder.group_by(DuneBaseAggType::Month)
@@ -418,10 +404,12 @@ fn testing() {
         }).write_overview().unwrap();
 
 
-    let builder = dune.builder();
+    let builder = db.builder();
     builder.push("latest-posts")
         .paged(1)
         .with(|builder, page| {
             builder.write_index().unwrap();
         });
+
+    // ALL THE BUILDER STUFF ACCUMULATES! THE WRITER IS HANDED THE RESULT OF THE BUILDER< IT WILL THEN EXECUTE THE WRITING!@
 }
