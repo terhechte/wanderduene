@@ -3,6 +3,23 @@ use std::io;
 use std::path::PathBuf;
 use std::collections::HashMap;
 
+
+/**
+FIXME:
+- Error Handling
+- Keywords
+- Tags
+- Unit Tests
+- htmlwriter
+- config
+- router: a trait that returns the absolute path for keyword, tag, post, year, year/month, year/month/day
+- the collection & parsing of items should happen on multiple threads possible with the rust go channels so that
+  even for large post bases, the parsing is fast
+- the writing of items could also happen on multiple threads, if the write actions are stored in a dependency tree,
+i.e. each folder for a year would be a new node in the tree, each month for each year a subnode of the respective tree node
+  then, we could paraellilize all years, and thend for each year all months
+*/
+
 pub struct BlogPost {
     pub identifier: String,
     pub path: String,
@@ -69,12 +86,19 @@ impl Database {
     }
     fn builder(&self) -> Builder {
         let path = PathBuf::from("html");
-        let v8: Vec<&BlogPost> = self.posts.iter().collect();
-        Builder::new(path, v8)
+        let posts: Vec<&BlogPost> = self.posts.iter().collect();
+        Builder::new(path, posts)
     }
 }
 
 // Traits
+
+trait DuneRouter {
+    fn route_post(post: &BlogPost) -> String;
+    fn route_tag(tag: &str) -> String;
+    fn route_keyword(keyword: &str) -> String;
+}
+
 
 trait DuneBuildMapper<'a> {
     fn group_by(self, key: DuneBaseAggType) -> GroupedDuneBuilder<'a>;
@@ -292,6 +316,20 @@ impl<'a> DuneBuildWriter for PagedDuneBuilder<'a> {
 
 #[test]
 fn testing() {
+
+    struct TestingRouter;
+    impl DuneRouter for TestingRouter {
+        fn route_post(post: &BlogPost) -> String {
+            "".to_owned()
+        }
+        fn route_tag(tag: &str) -> String {
+            "".to_owned()
+        }
+        fn route_keyword(keyword: &str) -> String {
+            "".to_owned()
+        }
+    }
+
     let db = Database::new();
     let builder = db.builder();
     builder.group_by(DuneBaseAggType::Year)
