@@ -1,10 +1,29 @@
+#![feature(nll)]
+
 use std::error::Error;
 use std::io;
 use std::path::PathBuf;
 use std::collections::HashMap;
 use std::rc::Rc;
+use std::cell::Cell;
+
+// Useful to have
+trait VecCellAppendable {
+    type Item;
+    fn append(&self, mut items: Vec<Self::Item>);
+}
+impl<T> VecCellAppendable for Cell<Option<Vec<T>>> {
+    type Item = T;
+    fn append(&self, mut items: Vec<Self::Item>) {
+        if let Some(mut current) = self.take() {
+            current.append(&mut items);
+            self.set(Some(current));
+        }
+    }
+}
 
 
+#[derive(Debug)]
 pub struct BlogPost {
     pub identifier: String,
     pub path: String,
@@ -45,6 +64,7 @@ pub enum DuneBaseAggType {
     Year, Month, Day, Tag, Keyword, Enabled
 }
 
+#[derive(Debug)]
 pub struct DunePostTime {
     pub year: String,
     pub month: String,
@@ -53,6 +73,7 @@ pub struct DunePostTime {
     pub timestamp: i64
 }
 
+#[derive(Debug)]
 pub struct DuneAggregationEntry {
     identifier: String,
     count: i32
@@ -75,6 +96,13 @@ struct Database {
     tags: Vec<DuneAggregationEntry>,
     keywords: Vec<DuneAggregationEntry>,
     configuration: Rc<Configuration>,
+}
+
+#[derive(Debug)]
+enum DuneAction<'a> {
+    WriteOverview(PathBuf, Vec<&'a BlogPost>),
+    WriteIndex(PathBuf, Vec<&'a BlogPost>),
+    WritePost(PathBuf, &'a BlogPost, i32, i32),
 }
 
 struct Dune {
@@ -103,6 +131,15 @@ impl Dune {
 
 // Traits
 
+trait DuneWriter {
+    /// A list of items displayed as a list
+    fn overview(&self, path: &PathBuf, posts: &[&BlogPost]) -> io::Result<()>;
+    /// A list of possibly paged items. Displayed as a blog of contents
+    fn index<'a>(&self, path: &PathBuf, page: &DunePage<'a>) -> io::Result<()>;
+    /// A single post
+    fn post(&self, path: &PathBuf, post: &BlogPost) -> io::Result<()>;
+}
+
 trait DuneRouter {
     fn route_post(post: &BlogPost) -> String;
     fn route_tag(tag: &str) -> String;
@@ -123,10 +160,12 @@ trait DuneBuildFlatter<'a> {
 trait DuneBuildWriter {
     fn write_overview(self) -> io::Result<()>;
     fn write_index(self) -> io::Result<()>;
+    fn write_posts(self) -> io::Result<()>;
 }
 
 trait DuneBuildCollector<'a> {
-    fn with_posts<F>(self, action: F) -> Self where F: (Fn(&'a BlogPost, i32, i32, &PathBuf) -> ());
+    //fn with_posts<'b, F>(self, action: F) -> Self where 'a: 'b, F: (Fn(&'b BlogPost, i32, i32, &PathBuf) -> ());
+    fn collected(&self) -> Vec<&BlogPost>;
 }
 
 trait DunePathBuilder {
@@ -135,10 +174,16 @@ trait DunePathBuilder {
 
 // Types
 
+trait ActionReceiver<'a> {
+    fn receive(&self, mut actions: Vec<DuneAction<'a>>);
+}
+
 struct Builder<'a> {
     payload: Vec<&'a BlogPost>,
     path: PathBuf,
     database: Rc<Database>,
+    actions: Cell<Option<Vec<DuneAction<'a>>>>,
+    parent: Option<Box<ActionReceiver<'a>>>
 }
 
 impl<'a> Builder<'a> {
@@ -146,7 +191,33 @@ impl<'a> Builder<'a> {
         Builder {
             payload: posts,
             path: path,
-            database: database
+            database: database,
+            actions: Cell::new(Some(Vec::new())),
+            parent: None
+        }
+    }
+}
+
+impl<'a> ActionReceiver<'a> for Builder<'a> {
+    fn receive(&self, mut actions: Vec<DuneAction<'a>>) {
+        self.actions.append(actions);
+        // I'm sure there is a better way to do this. `RefCell` would be. But I'm trying to not use RefCell everywhere..
+        //let mut current = self.actions.replace(Vec::new());
+        //current.append(&mut actions);
+        //self.actions.set(current);
+    }
+}
+
+impl<'a> Drop for Builder<'a> {
+    fn drop(&mut self) {
+        println!("Dropping!");
+        if let Some(ref parent) = self.parent {
+            if let Some(mut contents) = self.actions.replace(None) {
+                parent.receive(contents);
+            }
+        } else {
+            println!("Root Builder");
+            println!("{:?}", &self.actions.replace(None));
         }
     }
 }
@@ -211,12 +282,15 @@ impl<'a> DuneBuildMapper<'a> for Builder<'a> {
 }
 
 impl<'a> DuneBuildCollector<'a> for Builder<'a> {
-    fn with_posts<F>(self, action: F) -> Self where F: (Fn(&'a BlogPost, i32, i32, &PathBuf) -> ()) {
+    /*fn with_posts<'b, F>(self, action: F) -> Self where 'a: 'b, F: (Fn(&'b BlogPost, i32, i32, &PathBuf) -> ()) {
         let count = self.payload.len();
         for (current, post) in self.payload.iter().enumerate() {
             action(post, current as i32, count as i32, &self.path);
         }
         self
+    }*/
+    fn collected(&self) -> Vec<&BlogPost> {
+        self.payload.clone()
     }
 }
 
@@ -229,14 +303,32 @@ impl<'a> DunePathBuilder for Builder<'a> {
 
 impl<'a> DuneBuildWriter for Builder<'a> {
     fn write_overview(self) -> io::Result<()> {
-        let mut path = self.path;
+        let mut path = self.path.clone();
         path.push("overview.html");
         println!("writing overview at {:?}", &path);
+        let mut items: Vec<DuneAction> = vec![DuneAction::WriteOverview(path, self.payload.clone())];
+        self.actions.append(items);
         Ok(())
     }
 
     fn write_index(self) -> io::Result<()> {
         println!("writing index at {:?}", &self.path);
+        let mut items: Vec<DuneAction> = vec![DuneAction::WriteIndex(self.path.clone(), self.payload.clone())];
+        self.actions.append(items);
+        Ok(())
+    }
+
+    fn write_posts(self) -> io::Result<()> {
+        let count = self.payload.len();
+        for (current, post) in self.payload.iter().enumerate() {
+            let mut path = self.path.clone();
+            path.push(&post.identifier);
+            path.push("index.html");
+            println!("writing posts at {:?}", &path);
+            let mut items: Vec<DuneAction> = vec![DuneAction::WritePost(path, post, current as i32, count as i32)];
+            self.actions.append(items);
+        }
+        //self
         Ok(())
     }
 }
@@ -245,6 +337,8 @@ struct GroupedDuneBuilder<'a> {
     database: Rc<Database>,
     payload: Vec<(String, Vec<&'a BlogPost>)>,
     path: PathBuf,
+    actions: Cell<Vec<DuneAction<'a>>>,
+    parent: Option<Box<ActionReceiver<'a>>>
 }
 
 impl<'a> GroupedDuneBuilder<'a> {
@@ -252,8 +346,51 @@ impl<'a> GroupedDuneBuilder<'a> {
         GroupedDuneBuilder {
             database,
             payload,
-            path
+            path,
+            actions: Cell::new(Vec::new()),
+            parent: None
         }
+    }
+}
+
+impl<'a> ActionReceiver<'a> for GroupedDuneBuilder<'a> {
+    fn receive(&self, mut actions: Vec<DuneAction<'a>>) {
+        // I'm sure there is a better way to do this. `RefCell` would be. But I'm trying to not use RefCell everywhere..
+        let mut current = self.actions.replace(Vec::new());
+        current.append(&mut actions);
+        self.actions.set(current);
+    }
+}
+
+impl<'a> Drop for GroupedDuneBuilder<'a> {
+    fn drop(&mut self) {
+        println!("Dropping!");
+        if let Some(ref parent) = self.parent {
+            let mut contents = self.actions.replace(Vec::new());
+            parent.receive(contents);
+        }
+    }
+}
+
+impl<'a> DuneBuildCollector<'a> for GroupedDuneBuilder<'a> {
+    /*fn with_posts<'b, F>(self, action: F) -> Self where 'a: 'b, F: (Fn(&'b BlogPost, i32, i32, &PathBuf) -> ()) {
+        {
+            let collected = self.collected();
+            let count = collected.len();
+            for (current, post) in collected.iter().enumerate() {
+                //action(post, current as i32, count as i32, &self.path);
+            }
+        }
+        self
+    }*/
+    fn collected(&self) -> Vec<&BlogPost> {
+        let mut result: Vec<&BlogPost> = Vec::new();
+        for &(_, ref posts) in self.payload.iter() {
+            for post in posts {
+                result.push(post);
+            }
+        }
+        result
     }
 }
 
@@ -272,13 +409,23 @@ impl<'a> DuneBuildFlatter<'a> for GroupedDuneBuilder<'a> {
 
 impl<'a> DuneBuildWriter for GroupedDuneBuilder<'a> {
     fn write_overview(self) -> io::Result<()> {
-        let mut path = self.path;
+        let mut path = self.path.clone();
         path.push("overview.html");
         println!("writing overview at {:?}", &path);
+        let collected = self.collected();
+        let mut items: Vec<DuneAction> = vec![DuneAction::WriteOverview(self.path.clone(), collected)];
         Ok(())
     }
+
     fn write_index(self) -> io::Result<()> {
         println!("writing index at {:?}", &self.path);
+        let collected = self.collected();
+        let mut items: Vec<DuneAction> = vec![DuneAction::WriteIndex(self.path.clone(), collected)];
+        Ok(())
+    }
+
+    fn write_posts(self) -> io::Result<()> {
+        println!("not implemented yet..");
         Ok(())
     }
 }
@@ -322,14 +469,46 @@ impl<'a> DuneBuildFlatter<'a> for PagedDuneBuilder<'a> {
 
 impl<'a> DuneBuildWriter for PagedDuneBuilder<'a> {
     fn write_overview(self) -> io::Result<()> {
-        let mut path = self.path;
+        let mut path = self.path.clone();
         path.push("overview.html");
+        let collected = self.collected();
+        let mut items: Vec<DuneAction> = vec![DuneAction::WriteIndex(self.path.clone(), collected.clone())];
         println!("writing overview at {:?}", &path);
         Ok(())
     }
+
     fn write_index(self) -> io::Result<()> {
         println!("writing index at {:?}", &self.path);
+        let collected = self.collected();
+        let mut items: Vec<DuneAction> = vec![DuneAction::WriteIndex(self.path.clone(), collected.clone())];
         Ok(())
+    }
+
+    fn write_posts(self) -> io::Result<()> {
+        println!("not implemented yet..");
+        Ok(())
+    }
+}
+
+impl<'a> DuneBuildCollector<'a> for PagedDuneBuilder<'a> {
+    /*fn with_posts<'b, F>(self, action: F) -> Self where 'a: 'b, F: (Fn(&'b BlogPost, i32, i32, &PathBuf) -> ()) {
+        {
+            let collected = self.collected();
+            let count = collected.len();
+            for (current, post) in collected.iter().enumerate() {
+                action(post, current as i32, count as i32, &self.path);
+            }
+        }
+        self
+    }*/
+    fn collected(&self) -> Vec<&BlogPost> {
+        let mut result: Vec<&BlogPost> = Vec::new();
+        for page in self.payload.iter() {
+            for post in &page.posts {
+                result.push(post);
+            }
+        }
+        result
     }
 }
 
@@ -392,13 +571,11 @@ fn testing() {
                 .with(|builder, group| {
                     builder.group_by(DuneBaseAggType::Day)
                         .with(|builder, group| {
-                            builder.with_posts(|post, current, total, path| {
-                                // FIXME: have a writer here that can be used to write here
-                                let mut path = path.clone();
-                                path.push(&post.identifier);
-                                path.push("index.html");
-                                println!("writing posts at {:?}", &path);
-                            }).write_overview().unwrap();
+                            builder.write_posts();
+                            // FIXME:
+                            // allow
+                            // .builder.write_overview()
+                            // i.e. do not return result for writes
                         }).write_overview().unwrap();
                 }).write_overview().unwrap();
         }).write_overview().unwrap();
