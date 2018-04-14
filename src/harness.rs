@@ -84,14 +84,72 @@ impl Database {
             posts: posts,
         }
     }
+}
+
+struct Dune<Config, Writer, Router>
+where Config: DuneConfigurator, Writer: DuneWriter<Config, Router>, Router: DuneRouter {
+    database: Database,
+    configuration: Config,
+    writer: Writer,
+    router: Router
+}
+
+impl<Config: DuneConfigurator, Writer: DuneWriter<Config, Router>, Router: DuneRouter> Dune<Config, Writer, Router>
+{
     fn builder(&self) -> Builder {
         let path = PathBuf::from("html");
-        let posts: Vec<&BlogPost> = self.posts.iter().collect();
+        let posts: Vec<&BlogPost> = self.database.posts.iter().collect();
         Builder::new(path, posts)
     }
 }
 
 // Traits
+
+/// Configuration is a trait with required fields and a base implementation.
+/// Individual users can, however, create their own implementation to have access
+/// to additional properties in the `DuneWriter` or `DuneRouter` implementations.
+trait DuneConfigurator {
+}
+
+trait DuneWriter<Config: DuneConfigurator, Router: DuneRouter> {
+    // A list of items displayed as a list
+    fn overview(&self, config: &Config, router: &Router, path: &PathBuf, posts: &[&BlogPost]) -> io::Result<()>;
+    // A list of possibly paged items. Displayed as a blog of contents
+    //fn index<'a>(&self, path: &PathBuf, page: &DunePage<'a>) -> io::Result<()>;
+    // A single post
+    //fn post(&self, path: &PathBuf, post: &BlogPost) -> io::Result<()>;
+}
+
+use std::marker::PhantomData;
+struct HTMLWriter<C, R> where C: DuneConfigurator, R: DuneRouter {
+    _phantom1: PhantomData<C>,
+    _phantom2: PhantomData<R>,
+}
+
+impl<C, R> HTMLWriter<C, R> where C: DuneConfigurator, R: DuneRouter {
+    fn new() -> HTMLWriter<C, R> {
+        HTMLWriter {
+            _phantom1: PhantomData,
+            _phantom2: PhantomData
+        }
+    }
+}
+
+impl<C, R> DuneWriter<C, R> for HTMLWriter<C, R>  where C: DuneConfigurator, R: DuneRouter {
+    fn overview(&self, config: &C, router: &R, path: &PathBuf, posts: &[&BlogPost]) -> io::Result<()> {
+        println!("writing overview with {} posts to {:?}", posts.len(), &path);
+        Ok(())
+    }
+
+    /*fn index<'b>(&self, path: &PathBuf, page: &DunePage<'b>) -> io::Result<()> {
+        println!("writing index-page with {} posts to {:?}", page.posts.len(), &path);
+        Ok(())
+    }
+    fn post(&self, path: &PathBuf, post: &BlogPost) -> io::Result<()> {
+        println!("writing post {} to {:?}", post.title, &path);
+        Ok(())
+    }*/
+}
 
 trait DuneRouter {
     fn route_post(post: &BlogPost) -> String;
@@ -314,8 +372,12 @@ impl<'a> DuneBuildWriter for PagedDuneBuilder<'a> {
     }
 }
 
-#[test]
+//#[test]
 fn testing() {
+
+    struct AppventureConfig;
+
+    impl DuneConfigurator for AppventureConfig {}
 
     struct TestingRouter;
     impl DuneRouter for TestingRouter {
@@ -329,9 +391,15 @@ fn testing() {
             "".to_owned()
         }
     }
-
-    let db = Database::new();
-    let builder = db.builder();
+    let database = Database::new();
+    let writer: HTMLWriter<AppventureConfig, TestingRouter> = HTMLWriter::new();
+    let dune: Dune<AppventureConfig, HTMLWriter<AppventureConfig, TestingRouter>, TestingRouter> = Dune {
+        database: database,
+        configuration: AppventureConfig {},
+        writer: writer,
+        router: TestingRouter {}
+    };
+    let builder = dune.builder();
     builder.group_by(DuneBaseAggType::Year)
         .with(|builder, group| {
             builder.group_by(DuneBaseAggType::Month)
@@ -350,7 +418,7 @@ fn testing() {
         }).write_overview().unwrap();
 
 
-    let builder = db.builder();
+    let builder = dune.builder();
     builder.push("latest-posts")
         .paged(1)
         .with(|builder, page| {
