@@ -14,3 +14,13 @@ i.e. each folder for a year would be a new node in the tree, each month for each
 - If I need trait object downcasting, I can use: https://crates.io/crates/downcast-rs
 
     fn new(configuration: Rc<Configuration>, path: PathBuf, payload: Vec<(String, Vec<&'a BlogPost>)>) -> GroupedDuneBuilder<'a> {
+
+- 
+* What does a action require?
+- write overview
+- write index
+- write post
+- copy files
+- write project page
+- create directory (if it doesn't exist  yet)
+

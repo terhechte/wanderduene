@@ -23,7 +23,7 @@ impl<T> VecCellAppendable for Cell<Option<Vec<T>>> {
 }
 
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct BlogPost {
     pub identifier: String,
     pub path: String,
@@ -64,7 +64,7 @@ pub enum DuneBaseAggType {
     Year, Month, Day, Tag, Keyword, Enabled
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct DunePostTime {
     pub year: String,
     pub month: String,
@@ -99,14 +99,15 @@ struct Database {
 }
 
 #[derive(Debug)]
-enum DuneAction<'a> {
-    WriteOverview(PathBuf, Vec<&'a BlogPost>),
-    WriteIndex(PathBuf, Vec<&'a BlogPost>),
-    WritePost(PathBuf, &'a BlogPost, i32, i32),
+enum DuneAction {
+    WriteOverview(PathBuf, Vec<BlogPost>),
+    WriteIndex(PathBuf, Vec<BlogPost>),
+    WritePost(PathBuf, BlogPost, i32, i32),
 }
 
 struct Dune {
     database: Rc<Database>,
+    receiver: Rc<ActionReceiver>
 }
 
 impl Dune {
@@ -118,16 +119,34 @@ impl Dune {
                 tags: provider.tags(),
                 keywords: provider.keywords(),
                 configuration: configuration
-            })
+            }),
+            receiver: Rc::new(ActionReceiver::new())
         }
     }
 
     fn builder(&self) -> Builder {
         let path = PathBuf::from("html");
         let posts: Vec<&BlogPost> = self.database.posts.iter().collect();
-        Builder::new(Rc::clone(&self.database), path, posts)
+        Builder::new(Rc::clone(&self.database), path, posts, Rc::clone(&self.receiver))
+    }
+
+    fn execute(&self) {
+        for action in self.receiver.actions() {
+            println!("{:?}", action);
+        }
     }
 }
+
+/*impl<'a> ActionReceiver<'a> for Dune {
+    fn receive(&self, mut actions: Vec<DuneAction<'a>>) {
+        println!("receive actions: {:?}", actions);
+        // I'm sure there is a better way to do this. `RefCell` would be. But I'm trying to not use RefCell everywhere..
+        /*let mut current = self.actions.replace(Vec::new());
+        current.append(&mut actions);
+        self.actions.set(current);*/
+    }
+}*/
+
 
 // Traits
 
@@ -158,14 +177,17 @@ trait DuneBuildFlatter<'a> {
 }
 
 trait DuneBuildWriter {
-    fn write_overview(self) -> io::Result<()>;
-    fn write_index(self) -> io::Result<()>;
-    fn write_posts(self) -> io::Result<()>;
+    fn write_overview(self) -> Self;
+    fn write_index(self) -> Self;
+    fn write_posts(self) -> Self;
 }
 
 trait DuneBuildCollector<'a> {
     //fn with_posts<'b, F>(self, action: F) -> Self where 'a: 'b, F: (Fn(&'b BlogPost, i32, i32, &PathBuf) -> ());
     fn collected(&self) -> Vec<&BlogPost>;
+    fn into_collected(&self) -> Vec<BlogPost> {
+        self.collected().into_iter().map(|post|post.clone()).collect()
+    }
 }
 
 trait DunePathBuilder {
@@ -174,31 +196,56 @@ trait DunePathBuilder {
 
 // Types
 
-trait ActionReceiver<'a> {
-    fn receive(&self, mut actions: Vec<DuneAction<'a>>);
+struct ActionReceiver {
+    actions: Cell<Option<Vec<DuneAction>>>,
+}
+
+impl ActionReceiver {
+
+    fn new() -> ActionReceiver {
+        ActionReceiver {
+            actions: Cell::new(Some(Vec::new())),
+        }
+    }
+
+    fn receive<'a>(&self, mut actions: Vec<DuneAction>) {
+        //println!("receive actions: {:?}", actions);
+        // I'm sure there is a better way to do this. `RefCell` would be. But I'm trying to not use RefCell everywhere..
+        if let Some(mut current) = self.actions.replace(None) {
+            current.append(&mut actions);
+            self.actions.set(Some(current));
+        }
+    }
+
+    fn actions(&self) -> Vec<DuneAction> {
+        if let Some(mut current) = self.actions.replace(None) {
+            current.reverse();
+            return current;
+        }
+        Vec::new()
+    }
 }
 
 struct Builder<'a> {
     payload: Vec<&'a BlogPost>,
     path: PathBuf,
     database: Rc<Database>,
-    actions: Cell<Option<Vec<DuneAction<'a>>>>,
-    parent: Option<Box<ActionReceiver<'a>>>
+    parent: Rc<ActionReceiver>
 }
 
 impl<'a> Builder<'a> {
-    fn new(database: Rc<Database>, path: PathBuf, posts: Vec<&'a BlogPost>) -> Builder {
+    //fn new(database: Rc<Database>, path: PathBuf, posts: Vec<&'a BlogPost>) -> Builder<'a> {
+    fn new(database: Rc<Database>, path: PathBuf, posts: Vec<&'a BlogPost>, parent: Rc<ActionReceiver>) -> Builder<'a> {
         Builder {
             payload: posts,
             path: path,
             database: database,
-            actions: Cell::new(Some(Vec::new())),
-            parent: None
+            parent: parent
         }
     }
 }
 
-impl<'a> ActionReceiver<'a> for Builder<'a> {
+/*impl<'a> ActionReceiver<'a> for Builder<'a> {
     fn receive(&self, mut actions: Vec<DuneAction<'a>>) {
         self.actions.append(actions);
         // I'm sure there is a better way to do this. `RefCell` would be. But I'm trying to not use RefCell everywhere..
@@ -206,21 +253,7 @@ impl<'a> ActionReceiver<'a> for Builder<'a> {
         //current.append(&mut actions);
         //self.actions.set(current);
     }
-}
-
-impl<'a> Drop for Builder<'a> {
-    fn drop(&mut self) {
-        println!("Dropping!");
-        if let Some(ref parent) = self.parent {
-            if let Some(mut contents) = self.actions.replace(None) {
-                parent.receive(contents);
-            }
-        } else {
-            println!("Root Builder");
-            println!("{:?}", &self.actions.replace(None));
-        }
-    }
-}
+}*/
 
 impl<'a> DuneBuildMapper<'a> for Builder<'a> {
     fn group_by(self, key: DuneBaseAggType) -> GroupedDuneBuilder<'a> {
@@ -246,7 +279,8 @@ impl<'a> DuneBuildMapper<'a> for Builder<'a> {
         for (key, posts) in grouped {
             payload.push((key, posts));
         }
-        GroupedDuneBuilder::new(Rc::clone(&self.database), self.path.clone(), payload)
+        let builder = GroupedDuneBuilder::new(Rc::clone(&self.database), self.path.clone(), payload, Rc::clone(&self.parent));
+        builder
     }
 
     fn paged(self, per_page: i32) -> PagedDuneBuilder<'a> {
@@ -277,7 +311,7 @@ impl<'a> DuneBuildMapper<'a> for Builder<'a> {
             result.push(page);
             counter += 1;
         }
-        PagedDuneBuilder::new(Rc::clone(&self.database), self.path.clone(), result)
+        PagedDuneBuilder::new(Rc::clone(&self.database), self.path.clone(), result, Rc::clone(&self.parent))
     }
 }
 
@@ -302,34 +336,38 @@ impl<'a> DunePathBuilder for Builder<'a> {
 }
 
 impl<'a> DuneBuildWriter for Builder<'a> {
-    fn write_overview(self) -> io::Result<()> {
+    fn write_overview(self) -> Self {
         let mut path = self.path.clone();
         path.push("overview.html");
-        println!("writing overview at {:?}", &path);
-        let mut items: Vec<DuneAction> = vec![DuneAction::WriteOverview(path, self.payload.clone())];
-        self.actions.append(items);
-        Ok(())
+        //println!("writing overview at {:?}", &path);
+        let mut items: Vec<DuneAction> = vec![DuneAction::WriteOverview(path, self.into_collected())];
+        self.parent.receive(items);
+        self
     }
 
-    fn write_index(self) -> io::Result<()> {
-        println!("writing index at {:?}", &self.path);
-        let mut items: Vec<DuneAction> = vec![DuneAction::WriteIndex(self.path.clone(), self.payload.clone())];
-        self.actions.append(items);
-        Ok(())
+    fn write_index(self) -> Self {
+        //println!("writing index at {:?}", &self.path);
+        let mut path = self.path.clone();
+        path.push("index.html");
+        let mut items: Vec<DuneAction> = vec![DuneAction::WriteIndex(path, self.into_collected())];
+        self.parent.receive(items);
+        self
     }
 
-    fn write_posts(self) -> io::Result<()> {
+    fn write_posts(self) -> Self {
         let count = self.payload.len();
         for (current, post) in self.payload.iter().enumerate() {
             let mut path = self.path.clone();
             path.push(&post.identifier);
             path.push("index.html");
-            println!("writing posts at {:?}", &path);
-            let mut items: Vec<DuneAction> = vec![DuneAction::WritePost(path, post, current as i32, count as i32)];
-            self.actions.append(items);
+            //println!("writing posts at {:?}", &path);
+            // I have no idea why I need the double-clone here...
+            let mut items: Vec<DuneAction> = vec![DuneAction::WritePost(path, post.clone().clone(), current as i32, count as i32)];
+            self.parent.receive(items);
+            //let mut items: Vec<DuneAction> = vec![DuneAction::WritePost(path, post, current as i32, count as i32)];
+            //self.actions.append(items);
         }
-        //self
-        Ok(())
+        self
     }
 }
 
@@ -337,37 +375,16 @@ struct GroupedDuneBuilder<'a> {
     database: Rc<Database>,
     payload: Vec<(String, Vec<&'a BlogPost>)>,
     path: PathBuf,
-    actions: Cell<Vec<DuneAction<'a>>>,
-    parent: Option<Box<ActionReceiver<'a>>>
+    parent: Rc<ActionReceiver>
 }
 
 impl<'a> GroupedDuneBuilder<'a> {
-    fn new(database: Rc<Database>, path: PathBuf, payload: Vec<(String, Vec<&'a BlogPost>)>) -> GroupedDuneBuilder<'a> {
+    fn new(database: Rc<Database>, path: PathBuf, payload: Vec<(String, Vec<&'a BlogPost>)>, parent: Rc<ActionReceiver>) -> GroupedDuneBuilder<'a> {
         GroupedDuneBuilder {
             database,
             payload,
             path,
-            actions: Cell::new(Vec::new()),
-            parent: None
-        }
-    }
-}
-
-impl<'a> ActionReceiver<'a> for GroupedDuneBuilder<'a> {
-    fn receive(&self, mut actions: Vec<DuneAction<'a>>) {
-        // I'm sure there is a better way to do this. `RefCell` would be. But I'm trying to not use RefCell everywhere..
-        let mut current = self.actions.replace(Vec::new());
-        current.append(&mut actions);
-        self.actions.set(current);
-    }
-}
-
-impl<'a> Drop for GroupedDuneBuilder<'a> {
-    fn drop(&mut self) {
-        println!("Dropping!");
-        if let Some(ref parent) = self.parent {
-            let mut contents = self.actions.replace(Vec::new());
-            parent.receive(contents);
+            parent: parent
         }
     }
 }
@@ -400,7 +417,7 @@ impl<'a> DuneBuildFlatter<'a> for GroupedDuneBuilder<'a> {
         for &(ref key, ref posts) in self.payload.iter() {
             let mut path = self.path.clone();
             path.push(&key);
-            let inner_builder = Builder::new(Rc::clone(&self.database), path, posts.clone());
+            let inner_builder = Builder::new(Rc::clone(&self.database), path, posts.clone(), Rc::clone(&self.parent));
             action(inner_builder, key.to_owned());
         }
         self
@@ -408,25 +425,33 @@ impl<'a> DuneBuildFlatter<'a> for GroupedDuneBuilder<'a> {
 }
 
 impl<'a> DuneBuildWriter for GroupedDuneBuilder<'a> {
-    fn write_overview(self) -> io::Result<()> {
+    fn write_overview(self) -> Self {
         let mut path = self.path.clone();
         path.push("overview.html");
-        println!("writing overview at {:?}", &path);
-        let collected = self.collected();
-        let mut items: Vec<DuneAction> = vec![DuneAction::WriteOverview(self.path.clone(), collected)];
-        Ok(())
+        //println!("writing overview at {:?}", &path);
+        {
+            let collected = self.into_collected();
+            let mut items: Vec<DuneAction> = vec![DuneAction::WriteOverview(self.path.clone(), collected.clone())];
+            self.parent.receive(items);
+        }
+        self
     }
 
-    fn write_index(self) -> io::Result<()> {
-        println!("writing index at {:?}", &self.path);
-        let collected = self.collected();
-        let mut items: Vec<DuneAction> = vec![DuneAction::WriteIndex(self.path.clone(), collected)];
-        Ok(())
+    fn write_index(self) -> Self {
+        //println!("writing index at {:?}", &self.path);
+        {
+            //let collected = self.collected();
+            //let mut items: Vec<DuneAction> = vec![DuneAction::WriteIndex(self.path.clone(), collected.clone())];
+            let collected = self.into_collected();
+            let mut items: Vec<DuneAction> = vec![DuneAction::WriteIndex(self.path.clone(), collected.clone())];
+            self.parent.receive(items);
+        }
+        self
     }
 
-    fn write_posts(self) -> io::Result<()> {
+    fn write_posts(self) -> Self {
         println!("not implemented yet..");
-        Ok(())
+        self
     }
 }
 
@@ -441,14 +466,16 @@ struct PagedDuneBuilder<'a> {
     database: Rc<Database>,
     payload: Vec<DunePage<'a>>,
     path: PathBuf,
+    parent: Rc<ActionReceiver>
 }
 
 impl<'a> PagedDuneBuilder<'a> {
-    fn new(database: Rc<Database>, path: PathBuf, payload: Vec<DunePage<'a>>) -> PagedDuneBuilder {
+    fn new(database: Rc<Database>, path: PathBuf, payload: Vec<DunePage<'a>>, parent: Rc<ActionReceiver>) -> PagedDuneBuilder {
         PagedDuneBuilder {
             database,
             payload,
-            path
+            path,
+            parent
         }
     }
 }
@@ -460,7 +487,7 @@ impl<'a> DuneBuildFlatter<'a> for PagedDuneBuilder<'a> {
             let mut path = self.path.clone();
             let key = &format!("{}", page.page);
             path.push(&key);
-            let inner_builder = Builder::new(Rc::clone(&self.database), path, page.posts.clone());
+            let inner_builder = Builder::new(Rc::clone(&self.database), path, page.posts.clone(), Rc::clone(&self.parent));
             action(inner_builder, page.page);
         }
         self
@@ -468,25 +495,35 @@ impl<'a> DuneBuildFlatter<'a> for PagedDuneBuilder<'a> {
 }
 
 impl<'a> DuneBuildWriter for PagedDuneBuilder<'a> {
-    fn write_overview(self) -> io::Result<()> {
+    fn write_overview(self) -> Self {
         let mut path = self.path.clone();
         path.push("overview.html");
-        let collected = self.collected();
-        let mut items: Vec<DuneAction> = vec![DuneAction::WriteIndex(self.path.clone(), collected.clone())];
-        println!("writing overview at {:?}", &path);
-        Ok(())
+        {
+            //let collected = self.collected();
+            //let mut items: Vec<DuneAction> = vec![DuneAction::WriteIndex(self.path.clone(), collected.clone())];
+            let collected = self.into_collected();
+            let mut items: Vec<DuneAction> = vec![DuneAction::WriteOverview(self.path.clone(), collected.clone())];
+            self.parent.receive(items);
+        }
+        //println!("writing overview at {:?}", &path);
+        self
     }
 
-    fn write_index(self) -> io::Result<()> {
-        println!("writing index at {:?}", &self.path);
-        let collected = self.collected();
-        let mut items: Vec<DuneAction> = vec![DuneAction::WriteIndex(self.path.clone(), collected.clone())];
-        Ok(())
+    fn write_index(self) -> Self {
+        //println!("writing index at {:?}", &self.path);
+        {
+            //let collected = self.collected();
+            //let mut items: Vec<DuneAction> = vec![DuneAction::WriteIndex(self.path.clone(), collected.clone())];
+            let collected = self.into_collected();
+            let mut items: Vec<DuneAction> = vec![DuneAction::WriteIndex(self.path.clone(), collected.clone())];
+            self.parent.receive(items);
+        }
+        self
     }
 
-    fn write_posts(self) -> io::Result<()> {
+    fn write_posts(self) -> Self {
         println!("not implemented yet..");
-        Ok(())
+        self
     }
 }
 
@@ -571,22 +608,23 @@ fn testing() {
                 .with(|builder, group| {
                     builder.group_by(DuneBaseAggType::Day)
                         .with(|builder, group| {
-                            builder.write_posts();
+                            builder.write_posts().write_overview();
                             // FIXME:
                             // allow
                             // .builder.write_overview()
                             // i.e. do not return result for writes
-                        }).write_overview().unwrap();
-                }).write_overview().unwrap();
-        }).write_overview().unwrap();
+                        }).write_overview();
+                }).write_overview();
+        }).write_overview();
 
 
     let builder = db.builder();
     builder.push("latest-posts")
         .paged(1)
         .with(|builder, page| {
-            builder.write_index().unwrap();
+            builder.write_index();
         });
 
+    db.execute();
     // ALL THE BUILDER STUFF ACCUMULATES! THE WRITER IS HANDED THE RESULT OF THE BUILDER< IT WILL THEN EXECUTE THE WRITING!@
 }
