@@ -137,17 +137,6 @@ impl Dune {
     }
 }
 
-/*impl<'a> ActionReceiver<'a> for Dune {
-    fn receive(&self, mut actions: Vec<DuneAction<'a>>) {
-        println!("receive actions: {:?}", actions);
-        // I'm sure there is a better way to do this. `RefCell` would be. But I'm trying to not use RefCell everywhere..
-        /*let mut current = self.actions.replace(Vec::new());
-        current.append(&mut actions);
-        self.actions.set(current);*/
-    }
-}*/
-
-
 // Traits
 
 trait DuneWriter {
@@ -209,8 +198,6 @@ impl ActionReceiver {
     }
 
     fn receive<'a>(&self, mut actions: Vec<DuneAction>) {
-        //println!("receive actions: {:?}", actions);
-        // I'm sure there is a better way to do this. `RefCell` would be. But I'm trying to not use RefCell everywhere..
         if let Some(mut current) = self.actions.replace(None) {
             current.append(&mut actions);
             self.actions.set(Some(current));
@@ -234,7 +221,6 @@ struct Builder<'a> {
 }
 
 impl<'a> Builder<'a> {
-    //fn new(database: Rc<Database>, path: PathBuf, posts: Vec<&'a BlogPost>) -> Builder<'a> {
     fn new(database: Rc<Database>, path: PathBuf, posts: Vec<&'a BlogPost>, parent: Rc<ActionReceiver>) -> Builder<'a> {
         Builder {
             payload: posts,
@@ -245,19 +231,8 @@ impl<'a> Builder<'a> {
     }
 }
 
-/*impl<'a> ActionReceiver<'a> for Builder<'a> {
-    fn receive(&self, mut actions: Vec<DuneAction<'a>>) {
-        self.actions.append(actions);
-        // I'm sure there is a better way to do this. `RefCell` would be. But I'm trying to not use RefCell everywhere..
-        //let mut current = self.actions.replace(Vec::new());
-        //current.append(&mut actions);
-        //self.actions.set(current);
-    }
-}*/
-
 impl<'a> DuneBuildMapper<'a> for Builder<'a> {
     fn group_by(self, key: DuneBaseAggType) -> GroupedDuneBuilder<'a> {
-        //let grouped = self.payload.iter().fold(HashMap::<String, Vec<&BlogPost>>::new(), |mut acc: HashMap<String, Vec<&BlogPost>>, elm: &BlogPost| {
         let grouped = self.payload.iter().fold(HashMap::<String, Vec<&BlogPost>>::new(), |mut acc, elm| {
             {
                 // FIXME: Move this logic as an internal impl on DuneBaseAggType?
@@ -316,13 +291,6 @@ impl<'a> DuneBuildMapper<'a> for Builder<'a> {
 }
 
 impl<'a> DuneBuildCollector<'a> for Builder<'a> {
-    /*fn with_posts<'b, F>(self, action: F) -> Self where 'a: 'b, F: (Fn(&'b BlogPost, i32, i32, &PathBuf) -> ()) {
-        let count = self.payload.len();
-        for (current, post) in self.payload.iter().enumerate() {
-            action(post, current as i32, count as i32, &self.path);
-        }
-        self
-    }*/
     fn collected(&self) -> Vec<&BlogPost> {
         self.payload.clone()
     }
@@ -360,12 +328,8 @@ impl<'a> DuneBuildWriter for Builder<'a> {
             let mut path = self.path.clone();
             path.push(&post.identifier);
             path.push("index.html");
-            //println!("writing posts at {:?}", &path);
-            // I have no idea why I need the double-clone here...
             let mut items: Vec<DuneAction> = vec![DuneAction::WritePost(path, post.clone().clone(), current as i32, count as i32)];
             self.parent.receive(items);
-            //let mut items: Vec<DuneAction> = vec![DuneAction::WritePost(path, post, current as i32, count as i32)];
-            //self.actions.append(items);
         }
         self
     }
@@ -390,16 +354,6 @@ impl<'a> GroupedDuneBuilder<'a> {
 }
 
 impl<'a> DuneBuildCollector<'a> for GroupedDuneBuilder<'a> {
-    /*fn with_posts<'b, F>(self, action: F) -> Self where 'a: 'b, F: (Fn(&'b BlogPost, i32, i32, &PathBuf) -> ()) {
-        {
-            let collected = self.collected();
-            let count = collected.len();
-            for (current, post) in collected.iter().enumerate() {
-                //action(post, current as i32, count as i32, &self.path);
-            }
-        }
-        self
-    }*/
     fn collected(&self) -> Vec<&BlogPost> {
         let mut result: Vec<&BlogPost> = Vec::new();
         for &(_, ref posts) in self.payload.iter() {
@@ -428,7 +382,6 @@ impl<'a> DuneBuildWriter for GroupedDuneBuilder<'a> {
     fn write_overview(self) -> Self {
         let mut path = self.path.clone();
         path.push("overview.html");
-        //println!("writing overview at {:?}", &path);
         {
             let collected = self.into_collected();
             let mut items: Vec<DuneAction> = vec![DuneAction::WriteOverview(self.path.clone(), collected.clone())];
@@ -438,10 +391,7 @@ impl<'a> DuneBuildWriter for GroupedDuneBuilder<'a> {
     }
 
     fn write_index(self) -> Self {
-        //println!("writing index at {:?}", &self.path);
         {
-            //let collected = self.collected();
-            //let mut items: Vec<DuneAction> = vec![DuneAction::WriteIndex(self.path.clone(), collected.clone())];
             let collected = self.into_collected();
             let mut items: Vec<DuneAction> = vec![DuneAction::WriteIndex(self.path.clone(), collected.clone())];
             self.parent.receive(items);
@@ -499,21 +449,15 @@ impl<'a> DuneBuildWriter for PagedDuneBuilder<'a> {
         let mut path = self.path.clone();
         path.push("overview.html");
         {
-            //let collected = self.collected();
-            //let mut items: Vec<DuneAction> = vec![DuneAction::WriteIndex(self.path.clone(), collected.clone())];
             let collected = self.into_collected();
             let mut items: Vec<DuneAction> = vec![DuneAction::WriteOverview(self.path.clone(), collected.clone())];
             self.parent.receive(items);
         }
-        //println!("writing overview at {:?}", &path);
         self
     }
 
     fn write_index(self) -> Self {
-        //println!("writing index at {:?}", &self.path);
         {
-            //let collected = self.collected();
-            //let mut items: Vec<DuneAction> = vec![DuneAction::WriteIndex(self.path.clone(), collected.clone())];
             let collected = self.into_collected();
             let mut items: Vec<DuneAction> = vec![DuneAction::WriteIndex(self.path.clone(), collected.clone())];
             self.parent.receive(items);
@@ -528,16 +472,6 @@ impl<'a> DuneBuildWriter for PagedDuneBuilder<'a> {
 }
 
 impl<'a> DuneBuildCollector<'a> for PagedDuneBuilder<'a> {
-    /*fn with_posts<'b, F>(self, action: F) -> Self where 'a: 'b, F: (Fn(&'b BlogPost, i32, i32, &PathBuf) -> ()) {
-        {
-            let collected = self.collected();
-            let count = collected.len();
-            for (current, post) in collected.iter().enumerate() {
-                action(post, current as i32, count as i32, &self.path);
-            }
-        }
-        self
-    }*/
     fn collected(&self) -> Vec<&BlogPost> {
         let mut result: Vec<&BlogPost> = Vec::new();
         for page in self.payload.iter() {
@@ -626,5 +560,4 @@ fn testing() {
         });
 
     db.execute();
-    // ALL THE BUILDER STUFF ACCUMULATES! THE WRITER IS HANDED THE RESULT OF THE BUILDER< IT WILL THEN EXECUTE THE WRITING!@
 }
