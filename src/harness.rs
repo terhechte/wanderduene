@@ -79,7 +79,11 @@ pub struct DuneAggregationEntry {
     count: i32
 }
 
-trait Configuration {}
+trait Configuration {
+    fn overview_pagename(&self) -> &'static str;
+    fn index_pagename(&self) -> &'static str;
+    fn post_pagename(&self) -> &'static str;
+}
 
 struct DuneProject;
 
@@ -130,9 +134,14 @@ impl Dune {
         Builder::new(Rc::clone(&self.database), path, posts, Rc::clone(&self.receiver))
     }
 
-    fn execute(&self) {
+    fn execute<Writer: DuneWriter>(&self, writer: &Writer) {
         for action in self.receiver.actions() {
-            println!("{:?}", action);
+            match action {
+                DuneAction::WritePost(path, post, current, total) => writer.post(&path, &post, current, total),
+                //DuneAction::WriteIndex(path, posts) => writer.index(&path, &posts),
+                DuneAction::WriteOverview(path, posts) => writer.overview(&path, &posts),
+                _ => panic!()
+            };
         }
     }
 }
@@ -141,11 +150,11 @@ impl Dune {
 
 trait DuneWriter {
     /// A list of items displayed as a list
-    fn overview(&self, path: &PathBuf, posts: &[&BlogPost]) -> io::Result<()>;
+    fn overview(&self, path: &PathBuf, posts: &[BlogPost]) -> io::Result<()>;
     /// A list of possibly paged items. Displayed as a blog of contents
     fn index<'a>(&self, path: &PathBuf, page: &DunePage<'a>) -> io::Result<()>;
     /// A single post
-    fn post(&self, path: &PathBuf, post: &BlogPost) -> io::Result<()>;
+    fn post(&self, path: &PathBuf, post: &BlogPost, current: i32, total: i32) -> io::Result<()>;
 }
 
 trait DuneRouter {
@@ -305,7 +314,7 @@ impl<'a> DunePathBuilder for Builder<'a> {
 impl<'a> DuneBuildWriter for Builder<'a> {
     fn write_overview(self) -> Self {
         let mut path = self.path.clone();
-        path.push("overview.html");
+        path.push(self.database.configuration.overview_pagename());
         let mut items: Vec<DuneAction> = vec![DuneAction::WriteOverview(path, self.into_collected())];
         self.parent.receive(items);
         self
@@ -313,7 +322,7 @@ impl<'a> DuneBuildWriter for Builder<'a> {
 
     fn write_index(self) -> Self {
         let mut path = self.path.clone();
-        path.push("index.html");
+        path.push(self.database.configuration.index_pagename());
         let mut items: Vec<DuneAction> = vec![DuneAction::WriteIndex(path, self.into_collected())];
         self.parent.receive(items);
         self
@@ -324,7 +333,7 @@ impl<'a> DuneBuildWriter for Builder<'a> {
         for (current, post) in self.payload.iter().enumerate() {
             let mut path = self.path.clone();
             path.push(&post.identifier);
-            path.push("index.html");
+            path.push(self.database.configuration.post_pagename());
             let mut items: Vec<DuneAction> = vec![DuneAction::WritePost(path, post.clone().clone(), current as i32, count as i32)];
             self.parent.receive(items);
         }
@@ -378,7 +387,7 @@ impl<'a> DuneBuildFlatter<'a> for GroupedDuneBuilder<'a> {
 impl<'a> DuneBuildWriter for GroupedDuneBuilder<'a> {
     fn write_overview(self) -> Self {
         let mut path = self.path.clone();
-        path.push("overview.html");
+        path.push(self.database.configuration.overview_pagename());
         let collected = self.into_collected();
         let mut items: Vec<DuneAction> = vec![DuneAction::WriteOverview(self.path.clone(), collected.clone())];
         self.parent.receive(items);
@@ -387,7 +396,9 @@ impl<'a> DuneBuildWriter for GroupedDuneBuilder<'a> {
 
     fn write_index(self) -> Self {
         let collected = self.into_collected();
-        let mut items: Vec<DuneAction> = vec![DuneAction::WriteIndex(self.path.clone(), collected.clone())];
+        let mut path = self.path.clone();
+        path.push(self.database.configuration.index_pagename());
+        let mut items: Vec<DuneAction> = vec![DuneAction::WriteIndex(path.clone(), collected.clone())];
         self.parent.receive(items);
         self
     }
@@ -440,7 +451,7 @@ impl<'a> DuneBuildFlatter<'a> for PagedDuneBuilder<'a> {
 impl<'a> DuneBuildWriter for PagedDuneBuilder<'a> {
     fn write_overview(self) -> Self {
         let mut path = self.path.clone();
-        path.push("overview.html");
+        path.push(self.database.configuration.overview_pagename());
         let collected = self.into_collected();
         let mut items: Vec<DuneAction> = vec![DuneAction::WriteOverview(self.path.clone(), collected.clone())];
         self.parent.receive(items);
@@ -448,8 +459,10 @@ impl<'a> DuneBuildWriter for PagedDuneBuilder<'a> {
     }
 
     fn write_index(self) -> Self {
+        let mut path = self.path.clone();
+        path.push(self.database.configuration.index_pagename());
         let collected = self.into_collected();
-        let mut items: Vec<DuneAction> = vec![DuneAction::WriteIndex(self.path.clone(), collected.clone())];
+        let mut items: Vec<DuneAction> = vec![DuneAction::WriteIndex(path.clone(), collected.clone())];
         self.parent.receive(items);
         self
     }
@@ -469,6 +482,35 @@ impl<'a> DuneBuildCollector<'a> for PagedDuneBuilder<'a> {
             }
         }
         result
+    }
+}
+
+
+struct HTMLWriter {
+    configuration: Rc<Configuration>
+}
+
+impl HTMLWriter {
+    fn new(configuration: Rc<Configuration>) -> HTMLWriter {
+        HTMLWriter {
+            configuration
+        }
+    }
+}
+
+impl DuneWriter for HTMLWriter {
+    fn overview(&self, path: &PathBuf, posts: &[BlogPost]) -> io::Result<()> {
+        println!("writing overview with {} posts to {:?}", posts.len(), &path);
+        Ok(())
+    }
+
+    fn index<'b>(&self, path: &PathBuf, page: &DunePage<'b>) -> io::Result<()> {
+        println!("writing index-page with {} posts to {:?}", page.posts.len(), &path);
+        Ok(())
+    }
+    fn post(&self, path: &PathBuf, post: &BlogPost, current: i32, total: i32) -> io::Result<()> {
+        println!("writing post {} to {:?}", post.title, &path);
+        Ok(())
     }
 }
 
@@ -502,18 +544,28 @@ fn testing() {
     struct TestingRouter;
     impl DuneRouter for TestingRouter {
         fn route_post(post: &BlogPost) -> String {
-            "".to_owned()
+            "post/".to_owned()
         }
         fn route_tag(tag: &str) -> String {
-            "".to_owned()
+            "tag/".to_owned()
         }
         fn route_keyword(keyword: &str) -> String {
-            "".to_owned()
+            "keyword/".to_owned()
         }
     }
 
     struct AppventureConfig {}
-    impl Configuration for AppventureConfig {}
+    impl Configuration for AppventureConfig {
+        fn overview_pagename(&self) -> &'static str {
+            "overview.html"
+        }
+        fn index_pagename(&self) -> &'static str {
+            "index.html"
+        }
+        fn post_pagename(&self) -> &'static str {
+            "index.html"
+        }
+    }
 
     let configuration = Rc::new(AppventureConfig {});
     // This is so confusing. Doing `Database::new(Rc::clone(&configuration))`
@@ -548,5 +600,8 @@ fn testing() {
             builder.write_index();
         });
 
-    db.execute();
+    let cloned = Rc::clone(&configuration);
+    let writer = HTMLWriter::new(cloned);
+
+    db.execute(&writer);
 }
