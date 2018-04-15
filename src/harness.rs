@@ -119,33 +119,14 @@ struct Database {
     configuration: Rc<Configuration>,
 }
 
-/**
-- Write a detail list with pagination
-- Write a short list with pagination
-- Write a detail list without pagination
-- Write a short list without pagination
-- Write a single post with 'next, previous'
-- Write a single post without 'next, previous'
-- Write a list with a general headline (May 2016)
-
-List
-  pagination:
-   current, next, previous (number, absolute route, title), 
-  contents
-  title
-Post
-  pagination:
-   current, next, previous (number, absolute route, identifier)
-  title
-  post
-Asset
-*/
-
 #[derive(Debug)]
 struct DunePagination {
+    /// Name, Title, Route
     current: (i32, String, String),
-    next: Option<(i32, String)>,
-    previous: Option<(i32, String)>
+    /// Name, Title, Route
+    next: Option<(i32, String, String)>,
+    /// Name, Title, Route
+    previous: Option<(i32, String, String)>
 }
 
 #[derive(Debug)]
@@ -366,7 +347,6 @@ impl<'a> DuneBuildMapper<'a> for Builder<'a> {
 
 impl<'a> DuneBuildCollector<'a> for Builder<'a> {
     fn receive(self, action: DuneAction) -> Self {
-        println!("receive in parent");
         self.parent.receive(action);
         self
     }
@@ -427,13 +407,15 @@ impl<'a> PostBuilder<'a> {
     }
 
     /// Write the post at the current path using the given filename
-    fn write_post<Router: DuneRouter>(self, router: &Router) -> Self {
-        // FIXME: Move the routing from the configuration into the router trait object
-        // println!("router says: {}", &Router::route_tag("testtest"));
-        // let path = self.path.appending(self.database.configuration.index_pagename());
-        // let action = DuneAction::WritePost(path, self.payload.0.clone(), self.payload.1, self.payload.2);
-        // self.receive(action)
-        self
+    fn write_post<Router: DuneRouter>(self, router: &Router, title: String) -> Self {
+        let path = self.path.appending(&Router::post_pagename(&self, &self.payload.0));
+        let pagination = DunePagination {
+            current: (self.payload.1, format!("fake"), format!("fake")),
+            next: None,
+            previous: None
+        };
+        let action = DuneAction::Post(path, Some(pagination), title, self.payload.0.clone());
+        self.receive(action)
     }
 }
 
@@ -732,7 +714,7 @@ fn testing() {
                         .with(|builder, group| {
                             builder.with_posts(|postbuilder| {
                                 let title = &postbuilder.post().path;
-                                postbuilder.push(title).write_post(&TestingRouter);
+                                postbuilder.push(title).write_post(&TestingRouter, title.clone());
                             }).write(&TestingRouter, format!("{}", group), true);
                         }).write(&TestingRouter, format!("{}", group), true);
                 }).write(&TestingRouter, format!("{}", group), true);
