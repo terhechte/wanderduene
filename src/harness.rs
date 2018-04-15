@@ -212,7 +212,6 @@ trait DuneBuildCollector<'a> {
 trait DuneBuildWriter {
     fn write_overview(self) -> Self;
     fn write_index(self) -> Self;
-    fn write_posts(self) -> Self;
 }
 
 
@@ -363,19 +362,6 @@ impl<'a> DuneBuildWriter for Builder<'a> {
         let posts = self.into_collected();
         self.receive(DuneAction::WriteIndex(path, posts))
     }
-
-    fn write_posts(self) -> Self {
-        // FIXME
-        /*let count = self.payload.len();
-        for (current, post) in self.payload.iter().enumerate() {
-            let mut path = self.path.clone();
-            path.push(&post.identifier);
-            path.push(self.database.configuration.post_pagename());
-            let mut items: Vec<DuneAction> = vec![];
-            self.receive(DuneAction::WritePost(path, post.clone().clone(), current as i32, count as i32));
-        }*/
-        self
-    }
 }
 
 struct PostBuilder<'a> {
@@ -386,7 +372,6 @@ struct PostBuilder<'a> {
 }
 
 impl<'a> PostBuilder<'a> {
-
     fn new(database: Rc<Database>, path: PathBuf, payload: (&'a BlogPost, i32, i32), parent: Rc<ActionReceiver>) -> PostBuilder<'a> {
         PostBuilder {
             payload,
@@ -396,10 +381,17 @@ impl<'a> PostBuilder<'a> {
         }
     }
 
+    fn post(&self) -> &'a BlogPost {
+        self.payload.0
+    }
+
     /// Write the post at the current path using the given filename
     fn write_post<Router: DuneRouter>(self, router: &Router) -> Self {
-        println!("writing post {:?}", self.payload.0.title);
-        self
+        // FIXME: Move the routing from the configuration into the router trait object
+        println!("router says: {}", &Router::route_tag("testtest"));
+        let path = self.path.appending(self.database.configuration.index_pagename());
+        let action = DuneAction::WritePost(path, self.payload.0.clone(), self.payload.1, self.payload.2);
+        self.receive(action)
     }
 }
 
@@ -495,11 +487,6 @@ impl<'a> DuneBuildWriter for GroupedDuneBuilder<'a> {
         let posts = self.into_collected();
         self.receive(DuneAction::WriteIndex(path, posts))
     }
-
-    fn write_posts(self) -> Self {
-        println!("not implemented yet..");
-        self
-    }
 }
 
 impl<'a> DunePathBuilder for GroupedDuneBuilder<'a> {
@@ -559,11 +546,6 @@ impl<'a> DuneBuildWriter for PagedDuneBuilder<'a> {
         let path = self.path.appending(self.database.configuration.index_pagename());
         let posts = self.into_collected();
         self.receive(DuneAction::WriteIndex(path, posts))
-    }
-
-    fn write_posts(self) -> Self {
-        println!("not implemented yet..");
-        self
     }
 }
 
@@ -697,11 +679,10 @@ fn testing() {
                 .with(|builder, group| {
                     builder.group_by(DuneBaseAggType::Day)
                         .with(|builder, group| {
-                            builder.write_posts().write_overview();
-                            // FIXME:
-                            // allow
-                            // .builder.write_overview()
-                            // i.e. do not return result for writes
+                            builder.with_posts(|postbuilder| {
+                                let title = &postbuilder.post().path;
+                                postbuilder.push(title).write_post(&TestingRouter);
+                            }).write_overview();
                         }).write_overview();
                 }).write_overview();
         }).write_overview();

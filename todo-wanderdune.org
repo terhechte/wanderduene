@@ -29,4 +29,5 @@ i.e. each folder for a year would be a new node in the tree, each month for each
 ** TODO merge with & group?
 ** TODO Somehow include the option to have PostBuilder.write_post use the filename from the router?
 ** TODO I don't need into_collected anymore, except if I really want to do multi-threading?
+** TODO Move the routing from the configuration into the router trait object
 
