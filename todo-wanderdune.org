@@ -31,3 +31,9 @@ i.e. each folder for a year would be a new node in the tree, each month for each
 ** TODO I don't need into_collected anymore, except if I really want to do multi-threading?
 ** TODO Move the routing from the configuration into the router trait object
 
+
+* For the Router:
+- get the full path of something (blogpost, tag, keyword.. what about my builder types?)
+- get the individual final component for something with the related builder.. ?
+i.e. overview<T: ..Builder>(for_builder: ..Builder)?
+and give each builder a way to retrieve the path?
