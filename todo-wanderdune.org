@@ -25,6 +25,7 @@ i.e. each folder for a year would be a new node in the tree, each month for each
 - create directory (if it doesn't exist  yet)
 - 
 * Tasks
+** TODO 
 ** TODO find a solution for posts
 ** TODO merge with & group?
 ** TODO Somehow include the option to have PostBuilder.write_post use the filename from the router?

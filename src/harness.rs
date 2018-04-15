@@ -191,10 +191,10 @@ impl Dune {
         for action in self.receiver.actions() {
             match action {
                 DuneAction::Post(_, _, _, _) => {
-                    println!("post action");
+                    println!("post action {:?}", action);
                 },
                 DuneAction::List(_, _, _, _, _) => {
-                    println!("list action")
+                    println!("list action {:?}", action);
                 }
             };
         }
@@ -249,8 +249,8 @@ trait DuneBuildCollector<'a> {
 
 trait DuneBuildWriter {
     fn write<Router: DuneRouter>(self, router: &Router, title: String, overview: bool) -> Self;
+    fn clone_to<T: AsRef<Path>>(self, path: T, title: String, overview: bool) -> Self;
 }
-
 
 trait DunePathBuilder {
     fn path(&self) -> &Path;
@@ -272,12 +272,9 @@ impl ActionReceiver {
     }
 
     fn receive<'a>(&self, mut action: DuneAction) {
-        println!("received in parent: {:?}", &action);
         if let Some(mut current) = self.actions.replace(None) {
             current.push(action);
             self.actions.set(Some(current));
-        } else {
-            println!("why was there a none?");
         }
     }
 
@@ -400,6 +397,11 @@ impl<'a> DuneBuildWriter for Builder<'a> {
         let path = self.path.appending(&Router::overview_pagename(&self));
         let posts = self.into_collected();
         self.receive(DuneAction::List(path, None, title, posts, true))
+    }
+
+    fn clone_to<T: AsRef<Path>>(self, path: T, title: String, overview: bool) -> Self {
+        let posts = self.into_collected();
+        self.receive(DuneAction::List(path.as_ref().to_path_buf(), None, title, posts, true))
     }
 }
 
@@ -524,6 +526,11 @@ impl<'a> DuneBuildWriter for GroupedDuneBuilder<'a> {
         let posts = self.into_collected();
         self.receive(DuneAction::List(path, None, title, posts, true))
     }
+
+    fn clone_to<T: AsRef<Path>>(self, path: T, title: String, overview: bool) -> Self {
+        let posts = self.into_collected();
+        self.receive(DuneAction::List(path.as_ref().to_path_buf(), None, title, posts, true))
+    }
 }
 
 impl<'a> DunePathBuilder for GroupedDuneBuilder<'a> {
@@ -580,6 +587,11 @@ impl<'a> DuneBuildWriter for PagedDuneBuilder<'a> {
         let path = self.path.appending(&Router::overview_pagename(&self));
         let posts = self.into_collected();
         self.receive(DuneAction::List(path, None, title, posts, true))
+    }
+
+    fn clone_to<T: AsRef<Path>>(self, path: T, title: String, overview: bool) -> Self {
+        let posts = self.into_collected();
+        self.receive(DuneAction::List(path.as_ref().to_path_buf(), None, title, posts, true))
     }
 }
 
@@ -731,7 +743,10 @@ fn testing() {
     builder.push("latest-posts")
         .paged(1)
         .with(|builder, (page, previous, next)| {
-            builder.push(format!("{}", page)).write(&TestingRouter, format!("Page {}", page), false);
+            let builder = builder.write(&TestingRouter, format!("Page {}", page), false);
+            if page == 1 {
+                builder.clone_to("index.html", format!("Welcome"), false);
+            }
         });
 
     let cloned = Rc::clone(&configuration);
