@@ -6,6 +6,7 @@ use std::path::{PathBuf, Path};
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::cell::Cell;
+use std::mem;
 
 // Useful to have
 trait VecCellAppendable {
@@ -197,9 +198,16 @@ trait DuneRouter {
     fn route_post(post: &BlogPost) -> String;
     fn route_tag(tag: &str) -> String;
     fn route_keyword(keyword: &str) -> String;
-    fn overview_pagename<PathBuilder: DunePathBuilder>(&PathBuilder) -> String;
+    fn overview_pagename<PathBuilder: DunePathBuilder>(builder: &PathBuilder) -> String;
     fn index_pagename<PathBuilder: DunePathBuilder>(builder: &PathBuilder) -> String;
     fn post_pagename<PathBuilder: DunePathBuilder>(builder: &PathBuilder, post: &BlogPost) -> String;
+
+    fn is_overview<PathBuilder: DunePathBuilder>(builder: &PathBuilder, overview: bool) -> String {
+        match overview {
+            true => Self::overview_pagename(builder),
+            false => Self::index_pagename(builder)
+        }
+    }
 }
 
 
@@ -208,13 +216,14 @@ trait DuneBuildMapper<'a> {
     fn paged(self, i32) -> PagedDuneBuilder<'a>;
 }
 
-trait DuneBuildFlatter<'a> {
+trait DuneBuildFlatter<'a> where Self::BuilderType: DuneBuildWriter {
     type CategoryType;
+    type BuilderType;
     /// Will iterate over the contents of this collection. For each entry, a new
     /// `Builder` will be created and moved into the grouped `Category`.
     /// I.e. iterating over a structure such as `Vec<("2016", Vec<BlogPost>), ("2017", Vec<BlogPost>)>`
     /// will first create a builder for the sub-route `current/2016` and then for `current/2017`.
-    fn with<F>(self, action: F) -> Self where F: (Fn(Builder<'a>, Self::CategoryType) -> ());
+    fn with<F>(self, action: F) -> Self where F: (Fn(Self::BuilderType, Self::CategoryType) -> ());
 }
 
 trait DuneBuildCollector<'a> {
@@ -374,7 +383,7 @@ impl<'a> DunePathBuilder for Builder<'a> {
 
 impl<'a> DuneBuildWriter for Builder<'a> {
     fn write<Router: DuneRouter>(self, router: &Router, title: String, overview: bool) -> Self {
-        let path = self.path.appending(&Router::overview_pagename(&self));
+        let path = self.path.appending(&Router::is_overview(&self, overview));
         let posts = self.into_collected();
         self.receive(DuneAction::List(path, None, title, posts, true))
     }
@@ -491,6 +500,7 @@ impl<'a> DuneBuildCollector<'a> for GroupedDuneBuilder<'a> {
 
 impl<'a> DuneBuildFlatter<'a> for GroupedDuneBuilder<'a> {
     type CategoryType = String;
+    type BuilderType = Builder<'a>;
     fn with<F>(self, action: F) -> Self where F: (Fn(Builder<'a>, Self::CategoryType) -> ()) {
         for &(ref key, ref posts) in self.payload.iter() {
             let mut path = self.path.clone();
@@ -504,7 +514,7 @@ impl<'a> DuneBuildFlatter<'a> for GroupedDuneBuilder<'a> {
 
 impl<'a> DuneBuildWriter for GroupedDuneBuilder<'a> {
     fn write<Router: DuneRouter>(self, router: &Router, title: String, overview: bool) -> Self {
-        let path = self.path.appending(&Router::overview_pagename(&self));
+        let path = self.path.appending(&Router::is_overview(&self, overview));
         let posts = self.into_collected();
         self.receive(DuneAction::List(path, None, title, posts, true))
     }
@@ -525,6 +535,7 @@ impl<'a> DunePathBuilder for GroupedDuneBuilder<'a> {
     }
 }
 
+#[derive(Debug, Clone)]
 struct DunePage<'a> {
     page: i32,
     previous_page: Option<i32>,
@@ -552,21 +563,30 @@ impl<'a> PagedDuneBuilder<'a> {
 
 impl<'a> DuneBuildFlatter<'a> for PagedDuneBuilder<'a> {
     type CategoryType = (i32, Option<i32>, Option<i32>);
-    fn with<F>(self, action: F) -> Self where F: (Fn(Builder<'a>, Self::CategoryType) -> ()) {
-        for page in self.payload.iter() {
+    type BuilderType = PageDuneBuilder<'a>;
+    fn with<F>(self, action: F) -> Self where F: (Fn(PageDuneBuilder<'a>, Self::CategoryType) -> ())
+    {
+        for (idx, ref page) in self.payload.iter().enumerate() {
             let mut path = self.path.clone();
             let key = &format!("{}", page.page);
             path.push(&key);
-            let inner_builder = Builder::new(Rc::clone(&self.database), path, page.posts.clone(), Rc::clone(&self.parent));
-            action(inner_builder, (page.page, page.next_page, page.previous_page));
+            let inner_builder = PageDuneBuilder {
+                database: Rc::clone(&self.database),
+                payload: self.payload.clone(),
+                index: idx,
+                path: path,
+                parent: Rc::clone(&self.parent)
+            };
+            action(inner_builder, (0, None, None));
         }
         self
     }
+
 }
 
 impl<'a> DuneBuildWriter for PagedDuneBuilder<'a> {
     fn write<Router: DuneRouter>(self, router: &Router, title: String, overview: bool) -> Self {
-        let path = self.path.appending(&Router::overview_pagename(&self));
+        let path = self.path.appending(&Router::is_overview(&self, overview));
         let posts = self.into_collected();
         self.receive(DuneAction::List(path, None, title, posts, true))
     }
@@ -579,7 +599,6 @@ impl<'a> DuneBuildWriter for PagedDuneBuilder<'a> {
 
 impl<'a> DuneBuildCollector<'a> for PagedDuneBuilder<'a> {
     fn receive(self, action: DuneAction) -> Self {
-        println!("receive: {:?}", &action);
         self.parent.receive(action);
         self
     }
@@ -604,6 +623,61 @@ impl<'a> DuneBuildCollector<'a> for PagedDuneBuilder<'a> {
 }
 
 impl<'a> DunePathBuilder for PagedDuneBuilder<'a> {
+    fn push<T: AsRef<str>>(mut self, path: T) -> Self {
+        self.path.push(path.as_ref());
+        self
+    }
+    fn path(&self) -> &Path {
+        &self.path
+    }
+}
+
+struct PageDuneBuilder<'a> {
+    database: Rc<Database>,
+    payload: Vec<DunePage<'a>>,
+    index: usize,
+    path: PathBuf,
+    parent: Rc<ActionReceiver>
+}
+
+impl<'a> DuneBuildWriter for PageDuneBuilder<'a> {
+    fn write<Router: DuneRouter>(self, router: &Router, title: String, overview: bool) -> Self {
+        let path = self.path.appending(&Router::is_overview(&self, overview));
+        let posts = self.into_collected();
+        let pagination = DunePagination { current: (self.payload[self.index].page, "fake1".to_string(), "fake2".to_string()),
+                                          next: None,
+                                          previous: None
+        };
+        self.receive(DuneAction::List(path, Some(pagination), title, posts, overview))
+    }
+
+    // FIXME: This, I might be able to make a trait function
+    fn clone_to<T: AsRef<Path>>(self, path: T, title: String, overview: bool) -> Self {
+        let posts = self.into_collected();
+        self.receive(DuneAction::List(path.as_ref().to_path_buf(), None, title, posts, true))
+    }
+}
+
+impl<'a> DuneBuildCollector<'a> for PageDuneBuilder<'a> {
+    fn receive(self, action: DuneAction) -> Self {
+        self.parent.receive(action);
+        self
+    }
+
+    fn collected(&self) -> Vec<&'a BlogPost> {
+        self.payload[self.index].posts.clone()
+    }
+
+    fn with_posts<F>(self, action: F) -> Self where F: (Fn(PostBuilder<'a>) -> ()) {
+        let count = self.collected().len() as i32;
+        self.collected().iter().enumerate()
+            .map(|(pos, post)|PostBuilder::new(Rc::clone(&self.database), self.path.clone(), (post, pos as i32, count), Rc::clone(&self.parent)))
+            .for_each(|builder| action(builder));
+        self
+    }
+}
+
+impl<'a> DunePathBuilder for PageDuneBuilder<'a> {
     fn push<T: AsRef<str>>(mut self, path: T) -> Self {
         self.path.push(path.as_ref());
         self
@@ -718,7 +792,7 @@ fn testing() {
                             }).write(&TestingRouter, format!("{}", group), true);
                         }).write(&TestingRouter, format!("{}", group), true);
                 }).write(&TestingRouter, format!("{}", group), true);
-        }).write(&TestingRouter, format!("group"), true);
+        });
 
 
     let builder = db.builder();
@@ -726,6 +800,7 @@ fn testing() {
         .paged(1)
         .with(|builder, (page, previous, next)| {
             let builder = builder.write(&TestingRouter, format!("Page {}", page), false);
+            println!("building..");
             if page == 1 {
                 builder.clone_to("index.html", format!("Welcome"), false);
             }
