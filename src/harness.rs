@@ -181,7 +181,7 @@ trait DuneBuildMapper<'a> {
     fn paged(self, i32) -> PagedDuneBuilder<'a>;
 }
 
-trait DuneBuildFlatter<'a> where Self::BuilderType: DuneBuildWriter {
+trait DuneBuildFlatter<'a> where Self::BuilderType: DuneBuildWriter<'a> {
     type CategoryType;
     type BuilderType;
     /// Will iterate over the contents of this collection. For each entry, a new
@@ -222,13 +222,25 @@ trait DuneBuildCollector<'a> {
     }
 }
 
-trait DuneBuildWriter {
-    fn write<Router: DuneRouter>(self, router: &Router, title: String, overview: bool) -> Self;
-    fn clone_to<T: AsRef<Path>>(self, path: T, title: String, overview: bool) -> Self;
+trait DuneBuildWriter<'a> {
+    fn write<Router: DuneRouter>(self, router: &Router, title: String, overview: bool) -> Self
+    where Self: marker:: Sized + DuneBuilder + DuneBuildCollector<'a> + DunePathBuilder
+    {
+        let path = self.path().appending(&Router::is_overview(&self, overview));
+        let posts = self.into_collected();
+        self.receive(DuneAction::List(path, None, title, posts, true))
+    }
+
+    fn clone_to<T: AsRef<Path>>(self, path: T, title: String, overview: bool) -> Self
+    where Self: marker::Sized + DuneBuilder + DuneBuildCollector<'a> + DunePathBuilder {
+        let posts = self.into_collected();
+        let mut root_path = PathBuf::from(self.database().configuration.html_folder());
+        root_path.push(path);
+        self.receive(DuneAction::List(root_path, None, title, posts, overview))
+    }
 }
 
 trait DunePathBuilder {
-    fn path(&self) -> &Path;
     fn push<T: AsRef<str>>(mut self, path: T) -> Self;
 }
 
@@ -369,25 +381,9 @@ impl<'a> DunePathBuilder for Builder<'a> {
         self.path.push(path.as_ref());
         self
     }
-    fn path(&self) -> &Path {
-        &self.path
-    }
 }
 
-impl<'a> DuneBuildWriter for Builder<'a> {
-    fn write<Router: DuneRouter>(self, router: &Router, title: String, overview: bool) -> Self {
-        let path = self.path.appending(&Router::is_overview(&self, overview));
-        let posts = self.into_collected();
-        self.receive(DuneAction::List(path, None, title, posts, true))
-    }
-
-    fn clone_to<T: AsRef<Path>>(self, path: T, title: String, overview: bool) -> Self {
-        let posts = self.into_collected();
-        let mut root_path = PathBuf::from(self.database.configuration.html_folder());
-        root_path.push(path);
-        self.receive(DuneAction::List(root_path, None, title, posts, overview))
-    }
-}
+impl<'a> DuneBuildWriter<'a> for Builder<'a> {}
 
 struct PostBuilder<'a> {
     payload: Vec<&'a BlogPost>,
@@ -428,9 +424,6 @@ impl<'a> DunePathBuilder for PostBuilder<'a> {
     fn push<T: AsRef<str>>(mut self, path: T) -> Self {
         self.path.push(path.as_ref());
         self
-    }
-    fn path(&self) -> &Path {
-        &self.path
     }
 }
 
@@ -507,28 +500,12 @@ impl<'a> DuneBuildFlatter<'a> for GroupedDuneBuilder<'a> {
     }
 }
 
-impl<'a> DuneBuildWriter for GroupedDuneBuilder<'a> {
-    fn write<Router: DuneRouter>(self, router: &Router, title: String, overview: bool) -> Self {
-        let path = self.path.appending(&Router::is_overview(&self, overview));
-        let posts = self.into_collected();
-        self.receive(DuneAction::List(path, None, title, posts, true))
-    }
-
-    fn clone_to<T: AsRef<Path>>(self, path: T, title: String, overview: bool) -> Self {
-        let posts = self.into_collected();
-        let mut root_path = PathBuf::from(self.database.configuration.html_folder());
-        root_path.push(path);
-        self.receive(DuneAction::List(root_path, None, title, posts, overview))
-    }
-}
+impl<'a> DuneBuildWriter<'a> for GroupedDuneBuilder<'a> {}
 
 impl<'a> DunePathBuilder for GroupedDuneBuilder<'a> {
     fn push<T: AsRef<str>>(mut self, path: T) -> Self {
         self.path.push(path.as_ref());
         self
-    }
-    fn path(&self) -> &Path {
-        &self.path
     }
 }
 
@@ -586,20 +563,7 @@ impl<'a> DuneBuildFlatter<'a> for PagedDuneBuilder<'a> {
 
 }
 
-impl<'a> DuneBuildWriter for PagedDuneBuilder<'a> {
-    fn write<Router: DuneRouter>(self, router: &Router, title: String, overview: bool) -> Self {
-        let path = self.path.appending(&Router::is_overview(&self, overview));
-        let posts = self.into_collected();
-        self.receive(DuneAction::List(path, None, title, posts, true))
-    }
-
-    fn clone_to<T: AsRef<Path>>(self, path: T, title: String, overview: bool) -> Self {
-        let posts = self.into_collected();
-        let mut root_path = PathBuf::from(self.database.configuration.html_folder());
-        root_path.push(path);
-        self.receive(DuneAction::List(root_path, None, title, posts, overview))
-    }
-}
+impl<'a> DuneBuildWriter<'a> for PagedDuneBuilder<'a> {}
 
 impl<'a> DuneBuildCollector<'a> for PagedDuneBuilder<'a> {
     fn receive(self, action: DuneAction) -> Self {
@@ -624,9 +588,6 @@ impl<'a> DunePathBuilder for PagedDuneBuilder<'a> {
         self.path.push(path.as_ref());
         self
     }
-    fn path(&self) -> &Path {
-        &self.path
-    }
 }
 
 struct PageDuneBuilder<'a> {
@@ -643,19 +604,12 @@ impl<'a> DuneBuilder for PageDuneBuilder<'a> {
     fn parent(&self) -> &Rc<ActionReceiver> { &self.parent }
 }
 
-impl<'a> DuneBuildWriter for PageDuneBuilder<'a> {
+impl<'a> DuneBuildWriter<'a> for PageDuneBuilder<'a> {
     fn write<Router: DuneRouter>(self, router: &Router, title: String, overview: bool) -> Self {
         let path = self.path.appending(&Router::is_overview(&self, overview));
         let posts = self.into_collected();
         let pagination = self.payload[self.index].pagination.clone();
         self.receive(DuneAction::List(path, Some(pagination), title, posts, overview))
-    }
-
-    fn clone_to<T: AsRef<Path>>(self, path: T, title: String, overview: bool) -> Self {
-        let posts = self.into_collected();
-        let mut root_path = PathBuf::from(self.database.configuration.html_folder());
-        root_path.push(path);
-        self.receive(DuneAction::List(root_path, None, title, posts, overview))
     }
 }
 
@@ -675,9 +629,6 @@ impl<'a> DunePathBuilder for PageDuneBuilder<'a> {
     fn push<T: AsRef<str>>(mut self, path: T) -> Self {
         self.path.push(path.as_ref());
         self
-    }
-    fn path(&self) -> &Path {
-        &self.path
     }
 }
 
