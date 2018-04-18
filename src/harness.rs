@@ -6,7 +6,7 @@ use std::path::{PathBuf, Path};
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::cell::Cell;
-use std::mem;
+use std::marker;
 
 
 trait PathAppending {
@@ -191,6 +191,12 @@ trait DuneBuildFlatter<'a> where Self::BuilderType: DuneBuildWriter {
     fn with<F>(self, action: F) -> Self where F: (Fn(Self::BuilderType, Self::CategoryType) -> ());
 }
 
+trait DuneBuilder {
+    fn path(&self) -> &PathBuf;
+    fn database(&self) -> &Rc<Database>;
+    fn parent(&self) -> &Rc<ActionReceiver>;
+}
+
 trait DuneBuildCollector<'a> {
     fn receive(self, action: DuneAction) -> Self;
 
@@ -199,7 +205,21 @@ trait DuneBuildCollector<'a> {
         self.collected().into_iter().map(|post|post.clone()).collect()
     }
 
-    fn with_posts<F>(self, action: F) -> Self where F: (Fn(PostBuilder<'a>) -> ());
+    fn with_posts<F>(self, action: F) -> Self where F: (Fn(PostBuilder<'a>) -> ()), Self: marker::Sized + DuneBuilder {
+        let count = self.collected().len() as i32;
+        let collected = self.collected();
+        self.collected().iter().enumerate()
+            .map(|(pos, post)| {
+                PostBuilder {
+                    payload: collected.clone(),
+                    index: pos,
+                    path: self.path().clone(),
+                    database: Rc::clone(&self.database()),
+                    parent: Rc::clone(&self.parent())
+                }
+            }).for_each(|builder| action(builder));
+        self
+    }
 }
 
 trait DuneBuildWriter {
@@ -247,6 +267,12 @@ struct Builder<'a> {
     path: PathBuf,
     database: Rc<Database>,
     parent: Rc<ActionReceiver>
+}
+
+impl<'a> DuneBuilder for Builder<'a> {
+    fn path(&self) -> &PathBuf { &self.path }
+    fn database(&self) -> &Rc<Database> {&self.database }
+    fn parent(&self) -> &Rc<ActionReceiver> { &self.parent }
 }
 
 impl<'a> Builder<'a> {
@@ -336,21 +362,6 @@ impl<'a> DuneBuildCollector<'a> for Builder<'a> {
     fn collected(&self) -> Vec<&'a BlogPost> {
         self.payload.clone()
     }
-    fn with_posts<F>(self, action: F) -> Self where F: (Fn(PostBuilder<'a>) -> ()) {
-        let count = self.collected().len() as i32;
-        let collected = self.collected();
-        self.collected().iter().enumerate()
-            .map(|(pos, post)| {
-                PostBuilder {
-                    payload: collected.clone(),
-                    index: pos,
-                    path: self.path.clone(),
-                    database: Rc::clone(&self.database),
-                    parent: Rc::clone(&self.parent)
-                }
-            }).for_each(|builder| action(builder));
-        self
-    }
 }
 
 impl<'a> DunePathBuilder for Builder<'a> {
@@ -384,6 +395,12 @@ struct PostBuilder<'a> {
     path: PathBuf,
     database: Rc<Database>,
     parent: Rc<ActionReceiver>
+}
+
+impl<'a> DuneBuilder for PostBuilder<'a> {
+    fn path(&self) -> &PathBuf { &self.path }
+    fn database(&self) -> &Rc<Database> {&self.database }
+    fn parent(&self) -> &Rc<ActionReceiver> { &self.parent }
 }
 
 impl<'a> PostBuilder<'a> {
@@ -442,6 +459,12 @@ struct GroupedDuneBuilder<'a> {
     parent: Rc<ActionReceiver>
 }
 
+impl<'a> DuneBuilder for GroupedDuneBuilder<'a> {
+    fn path(&self) -> &PathBuf { &self.path }
+    fn database(&self) -> &Rc<Database> {&self.database }
+    fn parent(&self) -> &Rc<ActionReceiver> { &self.parent }
+}
+
 impl<'a> GroupedDuneBuilder<'a> {
     fn new(database: Rc<Database>, path: PathBuf, payload: Vec<(String, Vec<&'a BlogPost>)>, parent: Rc<ActionReceiver>) -> GroupedDuneBuilder<'a> {
         GroupedDuneBuilder {
@@ -467,21 +490,6 @@ impl<'a> DuneBuildCollector<'a> for GroupedDuneBuilder<'a> {
             }
         }
         result
-    }
-    fn with_posts<F>(self, action: F) -> Self where F: (Fn(PostBuilder<'a>) -> ()) {
-        let count = self.collected().len() as i32;
-        let collected = self.collected();
-        self.collected().iter().enumerate()
-            .map(|(pos, post)| {
-                PostBuilder {
-                    payload: collected.clone(),
-                    index: pos,
-                    path: self.path.clone(),
-                    database: Rc::clone(&self.database),
-                    parent: Rc::clone(&self.parent)
-                }
-            }).for_each(|builder| action(builder));
-        self
     }
 }
 
@@ -535,6 +543,12 @@ struct PagedDuneBuilder<'a> {
     payload: Vec<DunePage<'a>>,
     path: PathBuf,
     parent: Rc<ActionReceiver>
+}
+
+impl<'a> DuneBuilder for PagedDuneBuilder<'a> {
+    fn path(&self) -> &PathBuf { &self.path }
+    fn database(&self) -> &Rc<Database> {&self.database }
+    fn parent(&self) -> &Rc<ActionReceiver> { &self.parent }
 }
 
 
@@ -603,21 +617,6 @@ impl<'a> DuneBuildCollector<'a> for PagedDuneBuilder<'a> {
         result
     }
 
-    fn with_posts<F>(self, action: F) -> Self where F: (Fn(PostBuilder<'a>) -> ()) {
-        let count = self.collected().len() as i32;
-        let collected = self.collected();
-        self.collected().iter().enumerate()
-            .map(|(pos, post)| {
-                PostBuilder {
-                    payload: collected.clone(),
-                    index: pos,
-                    path: self.path.clone(),
-                    database: Rc::clone(&self.database),
-                    parent: Rc::clone(&self.parent)
-                }
-            }).for_each(|builder| action(builder));
-        self
-    }
 }
 
 impl<'a> DunePathBuilder for PagedDuneBuilder<'a> {
@@ -636,6 +635,12 @@ struct PageDuneBuilder<'a> {
     index: usize,
     path: PathBuf,
     parent: Rc<ActionReceiver>
+}
+
+impl<'a> DuneBuilder for PageDuneBuilder<'a> {
+    fn path(&self) -> &PathBuf { &self.path }
+    fn database(&self) -> &Rc<Database> {&self.database }
+    fn parent(&self) -> &Rc<ActionReceiver> { &self.parent }
 }
 
 impl<'a> DuneBuildWriter for PageDuneBuilder<'a> {
@@ -664,21 +669,6 @@ impl<'a> DuneBuildCollector<'a> for PageDuneBuilder<'a> {
         self.payload[self.index].posts.clone()
     }
 
-    fn with_posts<F>(self, action: F) -> Self where F: (Fn(PostBuilder<'a>) -> ()) {
-        let count = self.collected().len() as i32;
-        let collected = self.collected();
-        self.collected().iter().enumerate()
-            .map(|(pos, post)| {
-                PostBuilder {
-                    payload: collected.clone(),
-                    index: pos,
-                    path: self.path.clone(),
-                    database: Rc::clone(&self.database),
-                    parent: Rc::clone(&self.parent)
-                }
-            }).for_each(|builder| action(builder));
-        self
-    }
 }
 
 impl<'a> DunePathBuilder for PageDuneBuilder<'a> {
