@@ -8,28 +8,6 @@ use std::rc::Rc;
 use std::cell::Cell;
 use std::mem;
 
-// Useful to have
-trait VecCellAppendable {
-    type Item;
-    fn append(&self, mut items: Vec<Self::Item>);
-    fn push(&self, item: Self::Item);
-}
-impl<T> VecCellAppendable for Cell<Option<Vec<T>>> {
-    type Item = T;
-    fn append(&self, mut items: Vec<Self::Item>) {
-        if let Some(mut current) = self.take() {
-            current.append(&mut items);
-            self.set(Some(current));
-        }
-    }
-
-    fn push(&self, item: Self::Item) {
-        if let Some(mut current) = self.take() {
-            current.push(item);
-            self.set(Some(current));
-        }
-    }
-}
 
 trait PathAppending {
     fn appending<T: AsRef<Path>>(&self, element: T) -> Self;
@@ -78,7 +56,6 @@ impl BlogPost {
         }
     }
 }
-
 
 #[derive(Copy, Clone)]
 pub enum DuneBaseAggType {
@@ -138,7 +115,6 @@ enum DuneAction {
     /// Path, Paginationi, Title, Posts, Overview?
     List(PathBuf, Option<DunePagination>, String, Vec<BlogPost>, bool),
 }
-
 
 struct Dune {
     database: Rc<Database>,
@@ -560,6 +536,7 @@ struct PagedDuneBuilder<'a> {
     path: PathBuf,
     parent: Rc<ActionReceiver>
 }
+
 
 impl<'a> PagedDuneBuilder<'a> {
     fn new(database: Rc<Database>, path: PathBuf, payload: Vec<DunePage<'a>>, parent: Rc<ActionReceiver>) -> PagedDuneBuilder {
