@@ -4,11 +4,10 @@ use std::io::prelude::*;
 use std::error::Error;
 use std::fmt;
 use std::fs::File;
-use fileinfo::FileInfo;
 use std::process::Command;
 use std::str;
 use sha2::{Sha256, Digest};
-use rustbreak::Database;
+use fileinfo::FileInfo;
 
 #[derive(Debug)]
 struct BlogError {
@@ -188,9 +187,8 @@ impl BlogEntry {
 //    }
 }
 
-pub struct Blog<'a> {
-    pub configuration: &'a BlogConfiguration,
-    pub entries: Vec<BlogEntry>,
+pub struct OrgBlogParser<'a> {
+    configuration: &'a BlogConfiguration,
 }
 
 impl<'a> Blog<'a> {

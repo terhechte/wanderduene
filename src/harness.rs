@@ -8,6 +8,8 @@ use std::rc::Rc;
 use std::cell::Cell;
 use std::marker;
 
+use configuration::Configuration;
+
 
 trait PathAppending {
     fn appending<T: AsRef<Path>>(&self, element: T) -> Self;
@@ -77,9 +79,6 @@ pub struct DuneAggregationEntry {
     count: i32
 }
 
-trait Configuration {
-    fn html_folder(&self) -> &str;
-}
 
 struct DuneProject;
 
@@ -718,6 +717,9 @@ fn testing() {
     impl Configuration for AppventureConfig {
         fn html_folder(&self) -> &str {
             "html"
+        }
+        fn cache_file(&self) -> &Path {
+            Path::new("./cache_file.cache")
         }
     }
 

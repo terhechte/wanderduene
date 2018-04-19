@@ -2,6 +2,12 @@
 name = "wanderdüne"
 version = "0.1.0"
 authors = ["Benedikt Terhechte <terhechte@gmail.com>"]
+build = "build.rs"
 
 [dependencies]
-itertools = "0.7.8"
+askama = "0.5"
+sha2 = "0.7.0"
+rustbreak = "1.4.0"
+
+[build-dependencies]
+askama = "0.5"
