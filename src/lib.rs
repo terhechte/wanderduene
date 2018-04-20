@@ -1,10 +1,14 @@
-extern crate rustbreak;
 extern crate sha2;
 extern crate askama;
 
-//mod dune_base;
-//mod org_post;
-mod harness;
-//mod harness3;
 mod org_parser;
-mod configuration;
+
+//mod harness;
+//mod org_parser;
+//mod configuration;
+
+pub fn make() {
+    let parser = org_parser::OrgParser::new("/home/terhechte/Development/Rust/rusttest1/posts", 1);
+    let posts = parser.parse();
+    println!("{:?}", posts);
+}

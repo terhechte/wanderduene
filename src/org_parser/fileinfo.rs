@@ -69,7 +69,7 @@ impl FileInfo {
         match self.meta_contents("+keywords:") {
             Some(n) => n.trim().split(" ").collect(),
             None => Vec::new(),
-        };
+        }
     }
 
     pub fn is_disabled(&self) -> bool {
