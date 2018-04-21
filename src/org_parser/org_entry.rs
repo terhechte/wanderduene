@@ -11,6 +11,21 @@ use std::process::Command;
 use std::str;
 use sha2::{Sha256, Digest};
 
+// Include the pandoc template
+const PANDOC_HTML: &'static str = include_str!("pandoc.html");
+
+fn slurp<T: AsRef<Path>>(path: T) -> String {
+    let mut buf = String::new();
+    let mut file = File::open(path).unwrap();
+    file.read_to_string(&mut buf).unwrap();
+    buf
+}
+
+fn spit<T: AsRef<Path>>(path: T, contents: &str)  {
+    let mut file = File::create(path).unwrap();
+    file.write(contents.as_bytes());
+}
+
 #[derive(Debug)]
 pub struct OrgEntry {
     pub identifier: String,
@@ -85,7 +100,8 @@ impl OrgEntry {
     }
 
     fn render_pandoc(path: &Path, has_toc: bool) -> Result<String, Box<Error>> {
-        let mut args: Vec<&str> = vec!["--template", "./htmltemplate.html", "-s"];
+        spit("/tmp/htmltemplate.html", PANDOC_HTML);
+        let mut args: Vec<&str> = vec!["--template", "/tmp/htmltemplate.html", "-s"];
         if has_toc {
             args.push("--toc");
         }
@@ -93,8 +109,10 @@ impl OrgEntry {
             .args(&args)
             .arg(path.to_str().unwrap())
             .output()?;
-        println!("errrr: {:?}", str::from_utf8(&output.stderr));
-        Ok(str::from_utf8(&output.stdout)? .to_owned())
+        if &output.stderr.len() > &0 {
+            println!("errrr: {:?}", str::from_utf8(&output.stderr));
+        }
+        Ok(str::from_utf8(&output.stdout)?.to_owned())
     }
 
     fn parse_filename(filename: &String) -> Option<(String, String, String, String, String)> {
