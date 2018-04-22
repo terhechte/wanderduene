@@ -194,7 +194,7 @@ trait DuneBuildCollector<'a> {
 }
 
 trait DuneBuildWriter<'a> {
-    fn write<Router: DuneRouter>(self, router: &Router, title: String, overview: bool) -> Self
+    fn write<Router: DuneRouter>(self, router: &Router, title: String, overview: bool, sorted: bool) -> Self
     where Self: marker:: Sized + DuneBuilder + DuneBuildCollector<'a> + DunePathBuilder
     {
         let path = self.path().appending(&Router::is_overview(&self, overview));
@@ -202,9 +202,12 @@ trait DuneBuildWriter<'a> {
         self.receive(DuneAction::List(path, None, title, posts, true))
     }
 
-    fn clone_to<T: AsRef<Path>>(self, path: T, title: String, overview: bool) -> Self
+    fn clone_to<T: AsRef<Path>>(self, path: T, title: String, overview: bool, sorted: bool) -> Self
     where Self: marker::Sized + DuneBuilder + DuneBuildCollector<'a> + DunePathBuilder {
-        let posts = self.into_collected();
+        let mut posts = self.into_collected();
+        if sorted {
+            posts.sort();
+        }
         let mut root_path = PathBuf::from(self.database().configuration.html_folder());
         root_path.push(path);
         self.receive(DuneAction::List(root_path, None, title, posts, overview))
@@ -576,9 +579,12 @@ impl<'a> DuneBuilder for PageDuneBuilder<'a> {
 }
 
 impl<'a> DuneBuildWriter<'a> for PageDuneBuilder<'a> {
-    fn write<Router: DuneRouter>(self, router: &Router, title: String, overview: bool) -> Self {
+    fn write<Router: DuneRouter>(self, router: &Router, title: String, overview: bool, sorted: bool) -> Self {
         let path = self.path.appending(&Router::is_overview(&self, overview));
-        let posts = self.into_collected();
+        let mut posts = self.into_collected();
+        if sorted {
+            posts.sort();
+        }
         let pagination = self.payload[self.index].pagination.clone();
         self.receive(DuneAction::List(path, Some(pagination), title, posts, overview))
     }
@@ -692,9 +698,9 @@ fn testing() {
                             builder.with_posts(|postbuilder| {
                                 let title = &postbuilder.post().path;
                                 postbuilder.push(title).write_post(&TestingRouter, title.clone());
-                            }).write(&TestingRouter, format!("{} {} {}", year, month, day), true);
-                        }).write(&TestingRouter, format!("{} {}", year, month), true);
-                }).write(&TestingRouter, format!("{}", year), true);
+                            }).write(&TestingRouter, format!("{} {} {}", year, month, day), true, true);
+                        }).write(&TestingRouter, format!("{} {}", year, month), true, true);
+                }).write(&TestingRouter, format!("{}", year), true, true);
         });
 
     let builder = db.builder();
@@ -702,7 +708,7 @@ fn testing() {
         .group_by(DuneBaseAggType::Tag)
         .with(|builder, tag| {
             let count = &builder.collected().len();
-            builder.write(&TestingRouter, format!("{} {}", tag, count), true);
+            builder.write(&TestingRouter, format!("{} {}", tag, count), true, true);
         });
 
 
@@ -710,9 +716,9 @@ fn testing() {
     builder.push("latest-posts")
         .paged(1)
         .with(|builder, page| {
-            let builder = builder.write(&TestingRouter, format!("Page {}", page), false);
+            let builder = builder.write(&TestingRouter, format!("Page {}", page), false, true);
             if page == 1 {
-                builder.clone_to("index.html", format!("Welcome"), false);
+                builder.clone_to("index.html", format!("Welcome"), false, true);
             }
         });
 

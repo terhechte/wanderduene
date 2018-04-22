@@ -45,7 +45,6 @@ impl DunePost {
         };
         // we will read the file twice, which is ok for this simple, awful, blog project
         //let contents =
-        println!("path: {:?}", &path);
         let contents: String = match File::open(&path).ok().and_then(move |mut file| {
             let mut buf = String::new();
             file.read_to_string(&mut buf);
@@ -84,8 +83,8 @@ impl DunePost {
         let month_number = month.to_string().parse::<i32>().unwrap();
         let day_number = day.to_string().parse::<i32>().unwrap();
         Ok(DunePost {
-            identifier: name,
-            path: filename.to_owned(),
+            identifier: name.clone(),
+            path: name.clone(),
             title: title,
             released: DunePostTime {
                 year: year,

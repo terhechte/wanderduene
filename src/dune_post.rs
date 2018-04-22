@@ -1,3 +1,5 @@
+use std::cmp::{Ord, Ordering, PartialOrd, Eq, PartialEq};
+
 #[derive(Debug, Clone)]
 pub struct DunePost {
     pub identifier: String,
@@ -26,3 +28,23 @@ impl DunePostTime {
         ((year * 12 * 31) + (self.values.1 * 31) + self.values.2) as i64
     }
 }
+
+impl Ord for DunePost {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.released.timestamp().cmp(&other.released.timestamp())
+    }
+}
+
+impl PartialOrd for DunePost {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.released.timestamp().cmp(&other.released.timestamp()))
+    }
+}
+
+impl PartialEq for DunePost {
+    fn eq(&self, other: &Self) -> bool {
+        self.identifier == other.identifier
+    }
+}
+
+impl Eq for DunePost {}
