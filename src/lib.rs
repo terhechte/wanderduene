@@ -3,9 +3,9 @@ extern crate askama;
 
 mod org_parser;
 
-//mod harness;
-//mod org_parser;
-//mod configuration;
+mod harness;
+mod configuration;
+pub mod dune_post;
 
 pub fn make() {
     //let parser = org_parser::OrgParser::new("/home/terhechte/Development/Rust/rusttest1/posts", 1);

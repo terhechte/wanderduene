@@ -1,3 +1,4 @@
+use self::super::super::dune_post::{DunePost, DunePostTime};
 use org_parser::cache_db::CacheDB;
 use org_parser::org_error::OrgError;
 use org_parser::fileinfo::FileInfo;
@@ -26,28 +27,15 @@ fn spit<T: AsRef<Path>>(path: T, contents: &str)  {
     file.write(contents.as_bytes());
 }
 
-#[derive(Debug)]
-pub struct OrgEntry {
-    pub identifier: String,
-    pub filename: String,
-    pub info: FileInfo,
-    pub time_info: (String, String, String),
-    pub title: String,
-    // The raw contents, not converted yet
-    pub contents_raw: String,
-    // The Pandoc Output
-    pub contents_html: String,
-    pub route: String,
-}
+impl DunePost {
 
-impl OrgEntry {
     pub fn new(
         filename: &str,
         path: &PathBuf,
         cache: &CacheDB)
-        -> Result<OrgEntry, OrgError> {
+        -> Result<DunePost, OrgError> {
         let name = filename.clone().replace(".org", "");
-        let (title, route, year, month, day) = match OrgEntry::parse_filename(&name) {
+        let (title, route, year, month, day) = match DunePost::parse_filename(&name) {
             Some(n) => n,
             None => {
                 return Err(OrgError {
@@ -82,20 +70,34 @@ impl OrgEntry {
         if let Some(retrieved_content) = cache.cache_entry(identifier) {
             contents_html = retrieved_content;
         } else {
-            contents_html = OrgEntry::render_pandoc(&path, fileinfo.has_toc())
+            contents_html = DunePost::render_pandoc(&path, fileinfo.has_toc())
                 .map_err(|e|OrgError { message: format!("Error: {}", e) })?;
             cache.set_cache_entry(identifier, &contents_html);
         }
 
-        Ok(OrgEntry {
+        let tags = fileinfo.tags();
+        let keywords = fileinfo.keywords();
+        let description = fileinfo.desc();
+        let enabled = fileinfo.is_enabled();
+
+        let year_number = year.to_string().parse::<i32>().unwrap();
+        let month_number = month.to_string().parse::<i32>().unwrap();
+        let day_number = day.to_string().parse::<i32>().unwrap();
+        Ok(DunePost {
             identifier: name,
-            filename: filename.to_owned(),
-            info: fileinfo,
-            time_info: (year, month, day),
+            path: filename.to_owned(),
             title: title,
-            contents_raw: contents,
-            contents_html: contents_html,
-            route: route,
+            released: DunePostTime {
+                year: year,
+                month: month,
+                day: day,
+                values: (year_number, month_number, day_number),
+            },
+            contents: contents_html,
+            tags: tags,
+            keywords: keywords,
+            description: description,
+            enabled: enabled
         })
     }
 
@@ -130,23 +132,5 @@ impl OrgEntry {
             components[1].to_owned(),
             components[2].to_owned(),
         ));
-    }
-
-    pub fn timeinfo_string(&self) -> String {
-        format!(
-            "{}-{}-{}",
-            self.time_info.0,
-            self.time_info.1,
-            self.time_info.2
-        )
-    }
-
-    pub fn timestamp(&self) -> i64 {
-        let base_year: i64 = 2010;
-        let year = self.time_info.0.to_string().parse::<i64>().unwrap();
-        let month = self.time_info.1.to_string().parse::<i64>().unwrap();
-        let day = self.time_info.2.to_string().parse::<i64>().unwrap();
-        let year = year - base_year;
-        return (year * 12 * 31) + (month * 31) + day;
     }
 }

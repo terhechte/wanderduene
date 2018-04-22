@@ -1,5 +1,3 @@
-#![feature(nll)]
-
 use std::error::Error;
 use std::io;
 use std::path::{PathBuf, Path};
@@ -9,6 +7,8 @@ use std::cell::Cell;
 use std::marker;
 
 use configuration::Configuration;
+use dune_post::DunePost;
+use org_parser::OrgParser;
 
 
 trait PathAppending {
@@ -23,77 +23,24 @@ impl PathAppending for PathBuf {
     }
 }
 
-
-#[derive(Debug, Clone)]
-pub struct BlogPost {
-    pub identifier: String,
-    pub path: String,
-    pub title: String,
-    pub released: DunePostTime,
-    pub contents: String,
-    pub tags: Vec<String>,
-    pub keywords: Vec<String>,
-    pub description: String,
-    pub enabled: bool
-}
-
-impl BlogPost {
-    pub fn new(title: String, year: String, month: String, day: String, tags: &'static str) -> BlogPost {
-        BlogPost {
-            identifier: title.clone(),
-            path: title.clone(),
-            title: title.clone(),
-            released: DunePostTime {
-                year: year,
-                month: month,
-                day: day,
-                values: (0, 0, 0),
-                timestamp: 0
-            },
-            contents: title.clone(),
-            tags: tags.to_string().split(" ").map(|s| s.to_string()).collect(),
-            keywords: Vec::new(),
-            description: title.clone(),
-            enabled: true
-        }
-    }
-}
-
 #[derive(Copy, Clone)]
 pub enum DuneBaseAggType {
     Year, Month, Day, Tag, Keyword, Enabled
 }
 
-#[derive(Debug, Clone)]
-pub struct DunePostTime {
-    pub year: String,
-    pub month: String,
-    pub day: String,
-    pub values: (i32, i32, i32),
-    pub timestamp: i64
-}
-
 #[derive(Debug)]
-pub struct DuneAggregationEntry {
-    identifier: String,
-    count: i32
+pub struct DuneGroup {
+    pub identifier: String,
+    pub count: usize,
 }
 
-
-struct DuneProject;
-
-trait BlogProvider {
-    fn posts(&self) -> Vec<BlogPost>;
-    fn projects(&self) -> Vec<DuneProject>;
-    fn tags(&self) -> Vec<DuneAggregationEntry>;
-    fn keywords(&self) -> Vec<DuneAggregationEntry>;
-}
+pub struct DuneProject;
 
 struct Database {
-    posts: Vec<BlogPost>,
+    posts: Vec<DunePost>,
     projects: Vec<DuneProject>,
-    tags: Vec<DuneAggregationEntry>,
-    keywords: Vec<DuneAggregationEntry>,
+    tags: Vec<DuneGroup>,
+    keywords: Vec<DuneGroup>,
     configuration: Rc<Configuration>,
 }
 
@@ -110,9 +57,9 @@ struct DunePagination {
 #[derive(Debug)]
 enum DuneAction {
     /// Path, Pagination, Title, Blogpost
-    Post(PathBuf, Option<DunePagination>, String, BlogPost),
+    Post(PathBuf, Option<DunePagination>, String, DunePost),
     /// Path, Paginationi, Title, Posts, Overview?
-    List(PathBuf, Option<DunePagination>, String, Vec<BlogPost>, bool),
+    List(PathBuf, Option<DunePagination>, String, Vec<DunePost>, bool),
 }
 
 struct Dune {
@@ -121,27 +68,52 @@ struct Dune {
 }
 
 impl Dune {
-    fn new<Provider: BlogProvider>(configuration: Rc<Configuration>, provider: Provider) -> Dune {
+    fn new(configuration: Rc<Configuration>, posts: Vec<DunePost>, projects: Vec<DuneProject>) -> Dune {
+        let tags = Dune::aggregate(&posts, |post| &post.tags);
+        let keywords = Dune::aggregate(&posts, |post| &post.keywords);
         Dune {
             database: Rc::new(Database {
-                posts: provider.posts(),
-                projects: provider.projects(),
-                tags: provider.tags(),
-                keywords: provider.keywords(),
+                posts: posts,
+                projects: projects,
+                tags: tags,
+                keywords: keywords,
                 configuration: configuration
             }),
             receiver: Rc::new(ActionReceiver::new())
         }
     }
 
+    fn aggregate<A>(posts: &[DunePost], with_parser: A) -> Vec<DuneGroup>
+    where
+        A: Fn(&DunePost) -> &[String]
+    {
+        let mut tag_map: HashMap<String, Vec<&DunePost>> = HashMap::new();
+        for post in posts {
+            let entry_tags = with_parser(&post);
+            for tag in entry_tags {
+                let hash_entry = tag_map.entry(tag.to_string()).or_insert(Vec::new());
+                hash_entry.push(&post);
+            }
+        }
+        // build the tags
+        let mut result: Vec<DuneGroup> = Vec::new();
+        for (key, val) in tag_map.into_iter() {
+            result.push(DuneGroup {
+                identifier: key,
+                count: val.len()
+            });
+        }
+        return result;
+    }
+
     fn builder(&self) -> Builder {
         let path = PathBuf::from(self.database.configuration.html_folder());
-        let posts: Vec<&BlogPost> = self.database.posts.iter().collect();
+        let posts: Vec<&DunePost> = self.database.posts.iter().collect();
         Builder::new(Rc::clone(&self.database), path, posts, Rc::clone(&self.receiver))
     }
 
     // FIXME: Maybe move this into the database?
-    fn post_by_identifier<'a>(&'a self, identifier: &str) -> &'a BlogPost {
+    fn post_by_identifier<'a>(&self, identifier: &str) -> &'a DunePost {
         panic!();
     }
 
@@ -159,12 +131,12 @@ trait DuneWriter {
 }
 
 trait DuneRouter {
-    fn route_post(post: &BlogPost) -> String;
+    fn route_post(post: &DunePost) -> String;
     fn route_tag(tag: &str) -> String;
     fn route_keyword(keyword: &str) -> String;
     fn overview_pagename<PathBuilder: DunePathBuilder>(builder: &PathBuilder) -> String;
     fn index_pagename<PathBuilder: DunePathBuilder>(builder: &PathBuilder) -> String;
-    fn post_pagename<PathBuilder: DunePathBuilder>(builder: &PathBuilder, post: &BlogPost) -> String;
+    fn post_pagename<PathBuilder: DunePathBuilder>(builder: &PathBuilder, post: &DunePost) -> String;
 
     fn is_overview<PathBuilder: DunePathBuilder>(builder: &PathBuilder, overview: bool) -> String {
         match overview {
@@ -185,7 +157,7 @@ trait DuneBuildFlatter<'a> where Self::BuilderType: DuneBuildWriter<'a> {
     type BuilderType;
     /// Will iterate over the contents of this collection. For each entry, a new
     /// `Builder` will be created and moved into the grouped `Category`.
-    /// I.e. iterating over a structure such as `Vec<("2016", Vec<BlogPost>), ("2017", Vec<BlogPost>)>`
+    /// I.e. iterating over a structure such as `Vec<("2016", Vec<DunePost>), ("2017", Vec<DunePost>)>`
     /// will first create a builder for the sub-route `current/2016` and then for `current/2017`.
     fn with<F>(self, action: F) -> Self where F: (Fn(Self::BuilderType, Self::CategoryType) -> ());
 }
@@ -199,8 +171,8 @@ trait DuneBuilder {
 trait DuneBuildCollector<'a> {
     fn receive(self, action: DuneAction) -> Self;
 
-    fn collected(&self) -> Vec<&'a BlogPost>;
-    fn into_collected(&self) -> Vec<BlogPost> {
+    fn collected(&self) -> Vec<&'a DunePost>;
+    fn into_collected(&self) -> Vec<DunePost> {
         self.collected().into_iter().map(|post|post.clone()).collect()
     }
 
@@ -274,7 +246,7 @@ impl ActionReceiver {
 }
 
 struct Builder<'a> {
-    payload: Vec<&'a BlogPost>,
+    payload: Vec<&'a DunePost>,
     path: PathBuf,
     database: Rc<Database>,
     parent: Rc<ActionReceiver>
@@ -287,7 +259,7 @@ impl<'a> DuneBuilder for Builder<'a> {
 }
 
 impl<'a> Builder<'a> {
-    fn new(database: Rc<Database>, path: PathBuf, posts: Vec<&'a BlogPost>, parent: Rc<ActionReceiver>) -> Builder<'a> {
+    fn new(database: Rc<Database>, path: PathBuf, posts: Vec<&'a DunePost>, parent: Rc<ActionReceiver>) -> Builder<'a> {
         Builder {
             payload: posts,
             path: path,
@@ -299,7 +271,7 @@ impl<'a> Builder<'a> {
 
 impl<'a> DuneBuildMapper<'a> for Builder<'a> {
     fn group_by(self, key: DuneBaseAggType) -> GroupedDuneBuilder<'a> {
-        let grouped = self.payload.iter().fold(HashMap::<String, Vec<&BlogPost>>::new(), |mut acc, elm| {
+        let grouped = self.payload.iter().fold(HashMap::<String, Vec<&DunePost>>::new(), |mut acc, elm| {
             {
                 // FIXME: Move this logic as an internal impl on DuneBaseAggType?
                 let keys = match key {
@@ -320,7 +292,7 @@ impl<'a> DuneBuildMapper<'a> for Builder<'a> {
             acc
         });
         // FIXME: Can I map this?
-        let mut payload: Vec<(String, Vec<&'a BlogPost>)> = Vec::new();
+        let mut payload: Vec<(String, Vec<&'a DunePost>)> = Vec::new();
         for (key, posts) in grouped {
             payload.push((key, posts));
         }
@@ -333,7 +305,7 @@ impl<'a> DuneBuildMapper<'a> for Builder<'a> {
         let mut counter: i32 = 0;
         loop {
             let cloned = self.payload.clone();
-            let entries: Vec<&BlogPost> = cloned
+            let entries: Vec<&DunePost> = cloned
                 .into_iter()
                 .skip((counter * per_page) as usize)
                 .take(per_page as usize)
@@ -370,7 +342,7 @@ impl<'a> DuneBuildCollector<'a> for Builder<'a> {
         self.parent.receive(action);
         self
     }
-    fn collected(&self) -> Vec<&'a BlogPost> {
+    fn collected(&self) -> Vec<&'a DunePost> {
         self.payload.clone()
     }
 }
@@ -385,7 +357,7 @@ impl<'a> DunePathBuilder for Builder<'a> {
 impl<'a> DuneBuildWriter<'a> for Builder<'a> {}
 
 struct PostBuilder<'a> {
-    payload: Vec<&'a BlogPost>,
+    payload: Vec<&'a DunePost>,
     index: usize,
     path: PathBuf,
     database: Rc<Database>,
@@ -399,7 +371,7 @@ impl<'a> DuneBuilder for PostBuilder<'a> {
 }
 
 impl<'a> PostBuilder<'a> {
-    fn post(&self) -> &'a BlogPost {
+    fn post(&self) -> &'a DunePost {
         self.payload[self.index]
     }
 
@@ -432,7 +404,7 @@ impl<'a> DuneBuildCollector<'a> for PostBuilder<'a> {
         self
     }
 
-    fn collected(&self) -> Vec<&'a BlogPost> {
+    fn collected(&self) -> Vec<&'a DunePost> {
         vec![self.payload[self.index]]
     }
 
@@ -446,7 +418,7 @@ impl<'a> DuneBuildCollector<'a> for PostBuilder<'a> {
 
 struct GroupedDuneBuilder<'a> {
     database: Rc<Database>,
-    payload: Vec<(String, Vec<&'a BlogPost>)>,
+    payload: Vec<(String, Vec<&'a DunePost>)>,
     path: PathBuf,
     parent: Rc<ActionReceiver>
 }
@@ -458,7 +430,7 @@ impl<'a> DuneBuilder for GroupedDuneBuilder<'a> {
 }
 
 impl<'a> GroupedDuneBuilder<'a> {
-    fn new(database: Rc<Database>, path: PathBuf, payload: Vec<(String, Vec<&'a BlogPost>)>, parent: Rc<ActionReceiver>) -> GroupedDuneBuilder<'a> {
+    fn new(database: Rc<Database>, path: PathBuf, payload: Vec<(String, Vec<&'a DunePost>)>, parent: Rc<ActionReceiver>) -> GroupedDuneBuilder<'a> {
         GroupedDuneBuilder {
             database,
             payload,
@@ -474,8 +446,8 @@ impl<'a> DuneBuildCollector<'a> for GroupedDuneBuilder<'a> {
         self
     }
 
-    fn collected(&self) -> Vec<&'a BlogPost> {
-        let mut result: Vec<&BlogPost> = Vec::new();
+    fn collected(&self) -> Vec<&'a DunePost> {
+        let mut result: Vec<&DunePost> = Vec::new();
         for &(_, ref posts) in self.payload.iter() {
             for post in posts {
                 result.push(post);
@@ -511,7 +483,7 @@ impl<'a> DunePathBuilder for GroupedDuneBuilder<'a> {
 #[derive(Debug, Clone)]
 struct DunePage<'a> {
     pagination: DunePagination,
-    posts: Vec<&'a BlogPost>
+    posts: Vec<&'a DunePost>
 }
 
 struct PagedDuneBuilder<'a> {
@@ -529,7 +501,7 @@ impl<'a> DuneBuilder for PagedDuneBuilder<'a> {
 
 
 impl<'a> PagedDuneBuilder<'a> {
-    fn new(database: Rc<Database>, path: PathBuf, payload: Vec<DunePage<'a>>, parent: Rc<ActionReceiver>) -> PagedDuneBuilder {
+    fn new(database: Rc<Database>, path: PathBuf, payload: Vec<DunePage<'a>>, parent: Rc<ActionReceiver>) -> PagedDuneBuilder<'a> {
         PagedDuneBuilder {
             database,
             payload,
@@ -570,8 +542,8 @@ impl<'a> DuneBuildCollector<'a> for PagedDuneBuilder<'a> {
         self
     }
 
-    fn collected(&self) -> Vec<&'a BlogPost> {
-        let mut result: Vec<&BlogPost> = Vec::new();
+    fn collected(&self) -> Vec<&'a DunePost> {
+        let mut result: Vec<&DunePost> = Vec::new();
         for page in self.payload.iter() {
             for post in &page.posts {
                 result.push(post);
@@ -618,7 +590,7 @@ impl<'a> DuneBuildCollector<'a> for PageDuneBuilder<'a> {
         self
     }
 
-    fn collected(&self) -> Vec<&'a BlogPost> {
+    fn collected(&self) -> Vec<&'a DunePost> {
         self.payload[self.index].posts.clone()
     }
 
@@ -665,35 +637,9 @@ impl DuneWriter for HTMLWriter {
 #[test]
 fn testing() {
 
-    struct TestProvider {}
-
-    impl BlogProvider for TestProvider {
-        fn posts(&self) -> Vec<BlogPost> {
-            let posts = vec![BlogPost::new("test1".to_owned(), "2017".to_owned(), "01".to_owned(), "14".to_owned(), "a b c"),
-                             BlogPost::new("test2".to_owned(), "2016".to_owned(), "02".to_owned(), "24".to_owned(), "tag1 tag2"),
-                             BlogPost::new("test2x1".to_owned(), "2016".to_owned(), "02".to_owned(), "24".to_owned(), "tag1 tag3"),
-                             BlogPost::new("test2x2".to_owned(), "2016".to_owned(), "02".to_owned(), "24".to_owned(), "b tag3"),
-                             BlogPost::new("test3".to_owned(), "2015".to_owned(), "03".to_owned(), "31".to_owned(), "a b tag1"),
-            ];
-            posts
-        }
-
-        fn projects(&self) -> Vec<DuneProject> {
-            Vec::new()
-        }
-
-        fn tags(&self) -> Vec<DuneAggregationEntry> {
-            Vec::new()
-        }
-
-        fn keywords(&self) -> Vec<DuneAggregationEntry> {
-            Vec::new()
-        }
-    }
-
     struct TestingRouter;
     impl DuneRouter for TestingRouter {
-        fn route_post(post: &BlogPost) -> String {
+        fn route_post(post: &DunePost) -> String {
             format!("{}/{}/{}/{}", post.released.year, post.released.month, post.released.day, post.path)
         }
         fn route_tag(tag: &str) -> String {
@@ -708,7 +654,7 @@ fn testing() {
         fn index_pagename<PathBuilder: DunePathBuilder>(builder: &PathBuilder) -> String {
             "index.html".to_owned()
         }
-        fn post_pagename<PathBuilder: DunePathBuilder>(builder: &PathBuilder, post: &BlogPost) -> String {
+        fn post_pagename<PathBuilder: DunePathBuilder>(builder: &PathBuilder, post: &DunePost) -> String {
             "index.html".to_owned()
         }
     }
@@ -721,16 +667,20 @@ fn testing() {
         fn cache_file(&self) -> &Path {
             Path::new("./cache_file.cache")
         }
+        fn post_folder(&self) -> &Path {
+            Path::new("/Users/terhechte/Development/Rust/rusttest1/posts")
+        }
     }
 
     let configuration = Rc::new(AppventureConfig {});
     // This is so confusing. Doing `Database::new(Rc::clone(&configuration))`
     // will fail. Putting it into its own line, works fine.
     let cloned = Rc::clone(&configuration);
-    let provider = TestProvider {};
 
+    let parser = OrgParser::new(&cloned.post_folder(), 2);
+    let posts = parser.parse();
 
-    let db = Dune::new(cloned, provider);
+    let db = Dune::new(cloned, posts, Vec::new());
     let builder = db.builder();
 
     builder.group_by(DuneBaseAggType::Year)

@@ -1,5 +1,6 @@
+use self::super::super::dune_post::{DunePost, DunePostTime};
 use std::path::{PathBuf, Path};
-use org_parser::org_entry::OrgEntry;
+use org_parser::dune_post::*;
 use org_parser::cache_db::CacheDB;
 use std::fs;
 
@@ -20,8 +21,8 @@ impl OrgParser {
         }
     }
 
-    pub fn parse(&self) -> Vec<OrgEntry> {
-        let mut matches: Vec<OrgEntry> = Vec::new();
+    pub fn parse(&self) -> Vec<DunePost> {
+        let mut matches: Vec<DunePost> = Vec::new();
         let result = fs::read_dir(&self.folder);
         if let Err(x) = result {
             return matches;
@@ -34,12 +35,9 @@ impl OrgParser {
             match path.file_name().into_string() {
                 Ok(string) => {
                     if string.contains(&self.org_extension) {
-                        match OrgEntry::new(&string, &path.path(), &self.cache_db) {
+                        match DunePost::new(&string, &path.path(), &self.cache_db) {
                             Ok(blog) => {
-                                println!("Parsed {}", string);
-                                if !blog.info.is_disabled() {
-                                    matches.push(blog);
-                                }
+                                matches.push(blog);
                             }
                             Err(e) => {
                                 println!("Could not parse {}", string);
@@ -55,10 +53,10 @@ impl OrgParser {
                 }
             };
         }
-        matches.sort_by(|a, b| {
+        /*matches.sort_by(|a, b| {
             b.timestamp().cmp(&b.timestamp())
         });
-        matches.reverse();
+        matches.reverse();*/
         return matches;
     }
 }

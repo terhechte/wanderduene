@@ -58,25 +58,33 @@ impl FileInfo {
 }
 
 impl FileInfo {
-    pub fn tags<'a>(&'a self) -> Vec<&'a str> {
+    pub fn tags(&self) -> Vec<String> {
         match self.meta_contents("+tags:") {
-            Some(n) => n.trim().split(" ").collect(),
+            Some(n) => n.trim().split(" ").map(String::from).collect(),
             None => Vec::new(),
         }
     }
 
-    pub fn keywords<'a>(&'a self) -> Vec<&'a str> {
+    pub fn keywords(&self) -> Vec<String> {
         match self.meta_contents("+keywords:") {
-            Some(n) => n.trim().split(" ").collect(),
+            Some(n) => n.trim().split(" ").map(String::from).collect(),
             None => Vec::new(),
         }
     }
 
-    pub fn is_disabled(&self) -> bool {
-        match self.meta_contents("+inactive:") {
+    pub fn desc(&self) -> String {
+        match self.meta_contents("+description:") {
+            Some(n) => n.to_owned(),
+            None => String::new(),
+        }
+    }
+
+    pub fn is_enabled(&self) -> bool {
+        let result = match self.meta_contents("+inactive:") {
             Some(n) => n.contains("true"),
             _ => false
-        }
+        };
+        !result
     }
 
     pub fn has_toc(&self) -> bool {
