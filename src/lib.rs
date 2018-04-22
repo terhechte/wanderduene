@@ -1,5 +1,5 @@
 extern crate sha2;
-extern crate askama;
+#[macro_use] extern crate askama;
 
 mod org_parser;
 

@@ -1,0 +1,13 @@
+<div>
+  <div>
+  {{ entry.entry.contents_html }}
+  </div>
+
+{% for tag in tags %}
+  <span>
+      <a href="{{tag.route}}">
+      {{ tag.name|e }} ({{tag.count}})
+      </a>
+  </span>
+{% endfor %}
+</div>
