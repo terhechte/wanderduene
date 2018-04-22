@@ -9,8 +9,9 @@
 
 {% block content %}
 <ul>
-{% for entry in entries %}
-    <li> <a href="{{entry.full_route}}"> {{  entry.entry.timeinfo_string() }} {{ entry.name|e }}</a></li>
+{% for post in posts %}
+    <li> <a href="{{router::post(post)}}"> {{post.released.year}} {{post.title}}</a></li>
 {% endfor %}
 </ul>
+
 {% endblock %}

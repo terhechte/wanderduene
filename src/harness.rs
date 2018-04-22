@@ -11,6 +11,8 @@ use dune_post::DunePost;
 use org_parser::OrgParser;
 use dune_writer::*;
 use html_writer::*;
+use traits::*;
+use dune_router::DuneRouter;
 use dune_base::*;
 
 
@@ -86,30 +88,15 @@ impl Dune {
         panic!();
     }
 
-    fn execute<Writer: DuneWriter>(&self, writer: &Writer) {
+    fn execute<Writer: DuneWriter, Router: DuneRouter>(&self, writer: &Writer, router: &Router) {
         for action in self.receiver.actions() {
-            writer.write(&self.database, &action);
+            writer.write(&self.database, &action, router);
         }
     }
 }
 
 // Traits
 
-trait DuneRouter {
-    fn route_post(post: &DunePost) -> String;
-    fn route_tag(tag: &str) -> String;
-    fn route_keyword(keyword: &str) -> String;
-    fn overview_pagename<PathBuilder: DunePathBuilder>(builder: &PathBuilder) -> String;
-    fn index_pagename<PathBuilder: DunePathBuilder>(builder: &PathBuilder) -> String;
-    fn post_pagename<PathBuilder: DunePathBuilder>(builder: &PathBuilder, post: &DunePost) -> String;
-
-    fn is_overview<PathBuilder: DunePathBuilder>(builder: &PathBuilder, overview: bool) -> String {
-        match overview {
-            true => Self::overview_pagename(builder),
-            false => Self::index_pagename(builder)
-        }
-    }
-}
 
 
 trait DuneBuildMapper<'a> {
@@ -177,10 +164,6 @@ trait DuneBuildWriter<'a> {
         root_path.push(path);
         self.receive(DuneAction::List(root_path, None, title, posts, overview))
     }
-}
-
-trait DunePathBuilder {
-    fn push<T: AsRef<str>>(mut self, path: T) -> Self;
 }
 
 // Types
@@ -581,13 +564,13 @@ fn testing() {
 
     struct TestingRouter;
     impl DuneRouter for TestingRouter {
-        fn route_post(post: &DunePost) -> String {
+        fn post(post: &DunePost) -> String {
             format!("{}/{}/{}/{}", post.released.year, post.released.month, post.released.day, post.path)
         }
-        fn route_tag(tag: &str) -> String {
+        fn tag(tag: &str) -> String {
             format!("tag/{}", tag)
         }
-        fn route_keyword(keyword: &str) -> String {
+        fn keyword(keyword: &str) -> String {
             format!("keyword/{}", keyword)
         }
         fn overview_pagename<PathBuilder: DunePathBuilder>(builder: &PathBuilder) -> String {
@@ -603,6 +586,10 @@ fn testing() {
 
     struct AppventureConfig {}
     impl Configuration for AppventureConfig {
+        fn blog_name(&self) -> &str {
+            "Appventure.me"
+        }
+
         fn html_folder(&self) -> &str {
             "html"
         }
@@ -661,5 +648,5 @@ fn testing() {
     let cloned = Rc::clone(&configuration);
     let writer = HTMLWriter::new(cloned);
 
-    db.execute(&writer);
+    db.execute(&writer, &TestingRouter);
 }

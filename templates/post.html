@@ -1,29 +1,16 @@
-
-
 {% extends "base.html" %}
 
-{% block title %} {{ entry.entry.title }} {% endblock %}
+{% block title %}Post{% endblock %}
 
 {% block head %}
-  <style>
-  </style>
+<style>
+</style>
 {% endblock %}
 
 {% block content %}
 
-  <div>
-      <h1>tags:</h1>
-      {% for tag in entry.entry.info.tags() %}
-      {{tag}},
-      {% endfor %}
-  </div>
-  <div>
-      <h1>keywords:</h1>
-      {% for tag in entry.entry.info.keywords() %}
-      {{tag}},
-      {% endfor %}
-  </div>
+Page<br/>
+{% include "inner_post.html" %}
 
-  {% include "inner_post.html" %}
+
 {% endblock %}
-

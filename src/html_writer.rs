@@ -11,6 +11,7 @@ use configuration::Configuration;
 use dune_writer::*;
 use dune_base::DuneBase;
 use dune_post::DunePost;
+use dune_router::DuneRouter;
 
 pub struct HTMLWriter {
     configuration: Rc<Configuration>
@@ -20,39 +21,42 @@ pub struct HTMLWriter {
 /// All the shared structures are part of this base html.
 #[derive(Template)]
 #[template(path = "base.html")]
-struct BaseTemplate<'a> {
+struct BaseTemplate<'a, Router> where Router: 'a {
     base: &'a Rc<DuneBase>,
     config: &'a Rc<Configuration>,
+    router: &'a Router
 }
 
 /// This template is used for rendering an Index
 /// I.e. a list of posts where each post contains the full post
 #[derive(Template)]
 #[template(path = "index.html")]
-struct IndexTemplate<'a> {
+struct IndexTemplate<'a, Router> where Router: 'a {
     pagination: &'a Option<DunePagination>,
     posts: &'a Vec<DunePost>,
-    _parent: BaseTemplate<'a>
+    _parent: BaseTemplate<'a, Router>
 }
 /// This template is used for rendering an Overview
 /// I.e. a list of posts where each post is only the headline
 #[derive(Template)]
 #[template(path = "overview.html")]
-struct OverviewTemplate<'a> {
+struct OverviewTemplate<'a, Router> where Router: 'a {
     pagination: &'a Option<DunePagination>,
     posts: &'a Vec<DunePost>,
-    _parent: BaseTemplate<'a>
+    _parent: BaseTemplate<'a, Router>
 }
 
 /// This template is used for rendering a Post
 /// I.e. a single blog post
 #[derive(Template)]
 #[template(path = "post.html")]
-struct PostTemplate<'a> {
+struct PostTemplate<'a, Router> where Router: 'a {
     pagination: &'a Option<DunePagination>,
     post: &'a DunePost,
-    _parent: BaseTemplate<'a>
+    _parent: BaseTemplate<'a, Router>
 }
+
+// MOVE ROUTER INTO A NEWTYPE WRAPPRE?
 
 impl HTMLWriter {
     pub fn new(configuration: Rc<Configuration>) -> HTMLWriter {
@@ -61,10 +65,11 @@ impl HTMLWriter {
         }
     }
 
-    fn base_template<'a>(&'a self, base: &'a Rc<DuneBase>) -> BaseTemplate<'a> {
+    fn base_template<'a, Router: DuneRouter>(&'a self, base: &'a Rc<DuneBase>, router: &'a Router) -> BaseTemplate<'a, Router> {
         BaseTemplate {
             base: base,
-            config: &self.configuration
+            config: &self.configuration,
+            router: router
         }
     }
 
@@ -83,13 +88,13 @@ impl HTMLWriter {
 }
 
 impl DuneWriter for HTMLWriter {
-    fn write(&self, database: &Rc<DuneBase>, action: &DuneAction) -> io::Result<()> {
+    fn write<Router: DuneRouter>(&self, database: &Rc<DuneBase>, action: &DuneAction, router: &Router) -> io::Result<()> {
         match action {
             &DuneAction::Post(ref path, ref pagination, ref title, ref post) => {
                 let structure = PostTemplate {
                     pagination: pagination,
                     post: post,
-                    _parent: self.base_template(database)
+                    _parent: self.base_template(database, router)
                 };
                 // FIXME: Remove unwrap
                 let rendered = structure.render().unwrap();

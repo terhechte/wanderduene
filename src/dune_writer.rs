@@ -4,6 +4,7 @@ use std::rc::Rc;
 
 use dune_post::DunePost;
 use dune_base::DuneBase;
+use dune_router::DuneRouter;
 
 #[derive(Debug, Clone)]
 pub struct DunePagination {
@@ -24,5 +25,5 @@ pub enum DuneAction {
 }
 
 pub trait DuneWriter {
-    fn write(&self, database: &Rc<DuneBase>, action: &DuneAction) -> io::Result<()>;
+    fn write<Router: DuneRouter>(&self, database: &Rc<DuneBase>, action: &DuneAction, router: &Router) -> io::Result<()>;
 }
