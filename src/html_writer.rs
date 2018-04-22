@@ -1,3 +1,5 @@
+use askama::Template;
+
 use std::io;
 use std::rc::Rc;
 
