@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+
+{% block title %}Index{% endblock %}
+
+{% block head %}
+  <style>
+  </style>
+{% endblock %}
+
+{% block content %}
+<ul>
+{% for entry in entries %}
+    <li> <a href="{{entry.full_route}}"> {{  entry.entry.timeinfo_string() }} {{ entry.name|e }}</a></li>
+{% endfor %}
+</ul>
+{% endblock %}

@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+
+{% block title %}Index{% endblock %}
+
+{% block head %}
+  <style>
+  </style>
+{% endblock %}
+
+{% block content %}
+
+  Page<br/>
+<ul>
+{% for entry in page.index.contents %}
+  {% include "post.html" %}
+{% endfor %}
+</ul>
+
+{{page.number}}
+
+{% if page.previous_page.is_some() %}
+<a href="/latest-posts/{{ page.previous_page.as_ref().unwrap() }}"> Previous Page</a>
+{% endif %}
+
+{% if page.next_page.is_some() %}
+<a href="/latest-posts/{{ page.next_page.as_ref().unwrap() }}"> Next Page</a>
+{% endif %}
+
+{% endblock %}
