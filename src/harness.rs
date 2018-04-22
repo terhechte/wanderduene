@@ -11,6 +11,7 @@ use dune_post::DunePost;
 use org_parser::OrgParser;
 use dune_writer::*;
 use html_writer::*;
+use dune_base::*;
 
 
 trait PathAppending {
@@ -30,25 +31,8 @@ pub enum DuneBaseAggType {
     Year, Month, Day, Tag, Keyword, Enabled
 }
 
-#[derive(Debug)]
-pub struct DuneGroup {
-    pub identifier: String,
-    pub count: usize,
-}
-
-pub struct DuneProject;
-
-struct Database {
-    posts: Vec<DunePost>,
-    projects: Vec<DuneProject>,
-    tags: Vec<DuneGroup>,
-    keywords: Vec<DuneGroup>,
-    configuration: Rc<Configuration>,
-}
-
-
 struct Dune {
-    database: Rc<Database>,
+    database: Rc<DuneBase>,
     receiver: Rc<ActionReceiver>
 }
 
@@ -57,7 +41,7 @@ impl Dune {
         let tags = Dune::aggregate(&posts, |post| &post.tags);
         let keywords = Dune::aggregate(&posts, |post| &post.keywords);
         Dune {
-            database: Rc::new(Database {
+            database: Rc::new(DuneBase {
                 posts: posts,
                 projects: projects,
                 tags: tags,
@@ -145,7 +129,7 @@ trait DuneBuildFlatter<'a> where Self::BuilderType: DuneBuildWriter<'a> {
 
 trait DuneBuilder {
     fn path(&self) -> &PathBuf;
-    fn database(&self) -> &Rc<Database>;
+    fn database(&self) -> &Rc<DuneBase>;
     fn parent(&self) -> &Rc<ActionReceiver>;
 }
 
@@ -232,18 +216,18 @@ impl ActionReceiver {
 struct Builder<'a> {
     payload: Vec<&'a DunePost>,
     path: PathBuf,
-    database: Rc<Database>,
+    database: Rc<DuneBase>,
     parent: Rc<ActionReceiver>
 }
 
 impl<'a> DuneBuilder for Builder<'a> {
     fn path(&self) -> &PathBuf { &self.path }
-    fn database(&self) -> &Rc<Database> {&self.database }
+    fn database(&self) -> &Rc<DuneBase> {&self.database }
     fn parent(&self) -> &Rc<ActionReceiver> { &self.parent }
 }
 
 impl<'a> Builder<'a> {
-    fn new(database: Rc<Database>, path: PathBuf, posts: Vec<&'a DunePost>, parent: Rc<ActionReceiver>) -> Builder<'a> {
+    fn new(database: Rc<DuneBase>, path: PathBuf, posts: Vec<&'a DunePost>, parent: Rc<ActionReceiver>) -> Builder<'a> {
         Builder {
             payload: posts,
             path: path,
@@ -344,13 +328,13 @@ struct PostBuilder<'a> {
     payload: Vec<&'a DunePost>,
     index: usize,
     path: PathBuf,
-    database: Rc<Database>,
+    database: Rc<DuneBase>,
     parent: Rc<ActionReceiver>
 }
 
 impl<'a> DuneBuilder for PostBuilder<'a> {
     fn path(&self) -> &PathBuf { &self.path }
-    fn database(&self) -> &Rc<Database> {&self.database }
+    fn database(&self) -> &Rc<DuneBase> {&self.database }
     fn parent(&self) -> &Rc<ActionReceiver> { &self.parent }
 }
 
@@ -401,7 +385,7 @@ impl<'a> DuneBuildCollector<'a> for PostBuilder<'a> {
 
 
 struct GroupedDuneBuilder<'a> {
-    database: Rc<Database>,
+    database: Rc<DuneBase>,
     payload: Vec<(String, Vec<&'a DunePost>)>,
     path: PathBuf,
     parent: Rc<ActionReceiver>
@@ -409,12 +393,12 @@ struct GroupedDuneBuilder<'a> {
 
 impl<'a> DuneBuilder for GroupedDuneBuilder<'a> {
     fn path(&self) -> &PathBuf { &self.path }
-    fn database(&self) -> &Rc<Database> {&self.database }
+    fn database(&self) -> &Rc<DuneBase> {&self.database }
     fn parent(&self) -> &Rc<ActionReceiver> { &self.parent }
 }
 
 impl<'a> GroupedDuneBuilder<'a> {
-    fn new(database: Rc<Database>, path: PathBuf, payload: Vec<(String, Vec<&'a DunePost>)>, parent: Rc<ActionReceiver>) -> GroupedDuneBuilder<'a> {
+    fn new(database: Rc<DuneBase>, path: PathBuf, payload: Vec<(String, Vec<&'a DunePost>)>, parent: Rc<ActionReceiver>) -> GroupedDuneBuilder<'a> {
         GroupedDuneBuilder {
             database,
             payload,
@@ -471,7 +455,7 @@ struct DunePage<'a> {
 }
 
 struct PagedDuneBuilder<'a> {
-    database: Rc<Database>,
+    database: Rc<DuneBase>,
     payload: Vec<DunePage<'a>>,
     path: PathBuf,
     parent: Rc<ActionReceiver>
@@ -479,13 +463,13 @@ struct PagedDuneBuilder<'a> {
 
 impl<'a> DuneBuilder for PagedDuneBuilder<'a> {
     fn path(&self) -> &PathBuf { &self.path }
-    fn database(&self) -> &Rc<Database> {&self.database }
+    fn database(&self) -> &Rc<DuneBase> {&self.database }
     fn parent(&self) -> &Rc<ActionReceiver> { &self.parent }
 }
 
 
 impl<'a> PagedDuneBuilder<'a> {
-    fn new(database: Rc<Database>, path: PathBuf, payload: Vec<DunePage<'a>>, parent: Rc<ActionReceiver>) -> PagedDuneBuilder<'a> {
+    fn new(database: Rc<DuneBase>, path: PathBuf, payload: Vec<DunePage<'a>>, parent: Rc<ActionReceiver>) -> PagedDuneBuilder<'a> {
         PagedDuneBuilder {
             database,
             payload,
@@ -546,7 +530,7 @@ impl<'a> DunePathBuilder for PagedDuneBuilder<'a> {
 }
 
 struct PageDuneBuilder<'a> {
-    database: Rc<Database>,
+    database: Rc<DuneBase>,
     payload: Vec<DunePage<'a>>,
     index: usize,
     path: PathBuf,
@@ -555,7 +539,7 @@ struct PageDuneBuilder<'a> {
 
 impl<'a> DuneBuilder for PageDuneBuilder<'a> {
     fn path(&self) -> &PathBuf { &self.path }
-    fn database(&self) -> &Rc<Database> {&self.database }
+    fn database(&self) -> &Rc<DuneBase> {&self.database }
     fn parent(&self) -> &Rc<ActionReceiver> { &self.parent }
 }
 
@@ -660,7 +644,7 @@ fn testing() {
     }
 
     let configuration = Rc::new(AppventureConfig {});
-    // This is so confusing. Doing `Database::new(Rc::clone(&configuration))`
+    // This is so confusing. Doing `DuneBase::new(Rc::clone(&configuration))`
     // will fail. Putting it into its own line, works fine.
     let cloned = Rc::clone(&configuration);
 

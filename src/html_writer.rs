@@ -5,6 +5,7 @@ use std::rc::Rc;
 
 use configuration::Configuration;
 use dune_writer::*;
+use dune_base::DuneBase;
 
 pub struct HTMLWriter {
     configuration: Rc<Configuration>

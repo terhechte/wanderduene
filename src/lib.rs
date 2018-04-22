@@ -7,6 +7,7 @@ mod harness;
 mod configuration;
 mod dune_writer;
 mod html_writer;
+mod dune_base;
 pub mod dune_post;
 
 pub fn make() {
