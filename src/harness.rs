@@ -9,6 +9,8 @@ use std::marker;
 use configuration::Configuration;
 use dune_post::DunePost;
 use org_parser::OrgParser;
+use dune_writer::*;
+use html_writer::*;
 
 
 trait PathAppending {
@@ -44,23 +46,6 @@ struct Database {
     configuration: Rc<Configuration>,
 }
 
-#[derive(Debug, Clone)]
-struct DunePagination {
-    /// Page Number, Identifier
-    current: (i32, Option<String>),
-    /// Page Number, Identifier
-    next: Option<(i32, Option<String>)>,
-    /// Page Number, Title, Route
-    previous: Option<(i32, Option<String>)>
-}
-
-#[derive(Debug)]
-enum DuneAction {
-    /// Path, Pagination, Title, Blogpost
-    Post(PathBuf, Option<DunePagination>, String, DunePost),
-    /// Path, Paginationi, Title, Posts, Overview?
-    List(PathBuf, Option<DunePagination>, String, Vec<DunePost>, bool),
-}
 
 struct Dune {
     database: Rc<Database>,
@@ -125,10 +110,6 @@ impl Dune {
 }
 
 // Traits
-
-trait DuneWriter {
-    fn write(&self, action: &DuneAction) -> io::Result<()>;
-}
 
 trait DuneRouter {
     fn route_post(post: &DunePost) -> String;

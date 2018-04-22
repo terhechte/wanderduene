@@ -5,6 +5,8 @@ mod org_parser;
 
 mod harness;
 mod configuration;
+mod dune_writer;
+mod html_writer;
 pub mod dune_post;
 
 pub fn make() {
