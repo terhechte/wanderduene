@@ -1,6 +1,8 @@
 use std::path::PathBuf;
 use std::io;
 use std::rc::Rc;
+use std::fmt;
+use std::io::prelude::*;
 
 use dune_post::DunePost;
 use dune_base::DuneBase;
@@ -22,6 +24,16 @@ pub enum DuneAction {
     Post(PathBuf, Option<DunePagination>, String, DunePost),
     /// Path, Paginationi, Title, Posts, Overview?
     List(PathBuf, Option<DunePagination>, String, Vec<DunePost>, bool),
+}
+
+impl fmt::Display for DuneAction {
+    fn fmt(&self, f: &mut fmt::Formatter) -> Result<(), ::std::fmt::Error> {
+        match self {
+            &DuneAction::Post(ref path, _, _, _) => write!(f, "{:?}", &path),
+            &DuneAction::List(ref path, _, _, _, _) => write!(f, "{:?}", &path)
+        };
+        Ok(())
+    }
 }
 
 pub trait DuneWriter {

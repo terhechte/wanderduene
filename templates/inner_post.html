@@ -5,7 +5,7 @@
 
 {% for tag in base.tags %}
   <span>
-      <a href="{{tag.identifier}}">
+      <a href="{{ router.tag(tag.identifier.as_ref()) }} ">
       {{ tag.identifier }} ({{tag.count}})
       </a>
   </span>

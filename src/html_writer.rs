@@ -1,6 +1,8 @@
 use askama::Template;
 
 use std::io;
+use std::fs;
+use std::io::prelude::*;
 use std::rc::Rc;
 use std::path::{Path, PathBuf};
 use std::marker::PhantomData;
@@ -31,7 +33,7 @@ struct BaseTemplate<'a, Router> where Router: 'a + DuneRouter {
 /// This template is used for rendering an Index
 /// I.e. a list of posts where each post contains the full post
 #[derive(Template)]
-#[template(path = "index.html")]
+#[template(path = "index.html", escape = "none")]
 struct IndexTemplate<'a, Router> where Router: 'a + DuneRouter {
     pagination: &'a Option<DunePagination>,
     posts: &'a Vec<DunePost>,
@@ -40,7 +42,7 @@ struct IndexTemplate<'a, Router> where Router: 'a + DuneRouter {
 /// This template is used for rendering an Overview
 /// I.e. a list of posts where each post is only the headline
 #[derive(Template)]
-#[template(path = "overview.html")]
+#[template(path = "overview.html", escape = "none")]
 struct OverviewTemplate<'a, Router> where Router: 'a + DuneRouter {
     pagination: &'a Option<DunePagination>,
     posts: &'a Vec<DunePost>,
@@ -50,7 +52,7 @@ struct OverviewTemplate<'a, Router> where Router: 'a + DuneRouter {
 /// This template is used for rendering a Post
 /// I.e. a single blog post
 #[derive(Template)]
-#[template(path = "post.html")]
+#[template(path = "post.html", escape = "none")]
 struct PostTemplate<'a, Router> where Router: 'a + DuneRouter {
     pagination: &'a Option<DunePagination>,
     post: &'a DunePost,
@@ -67,10 +69,10 @@ impl<T> RouterWraper<T> where T: DuneRouter {
         T::post(post)
     }
     fn tag(&self, tag: &str) -> String {
-        "".to_string()
+        T::tag(tag)
     }
     fn keyword(&self, keyword: &str) -> String {
-        "".to_string()
+        T::keyword(keyword)
     }
 }
 
@@ -91,16 +93,9 @@ impl HTMLWriter {
         }
     }
 
-    fn create_directory(&self, path: &PathBuf) -> Result<(), Box<Error>> {
-        println!("c: {:?}", &path);
-        //fs::create_dir(&path);
-        Ok(())
-    }
-
-    fn create_file(&self, path: &PathBuf, contents: &str) -> Result<(), Box<Error>> {
-        //println!("creating file {}", &path);
-        //let mut file = fs::File::create(&path)?;
-        //file.write_all(contents.as_bytes())?;
+    fn create_file(&self, path: &Path, contents: &str) -> Result<(), Box<Error>> {
+        let mut file = fs::File::create(&path)?;
+        file.write_all(contents.as_bytes())?;
         Ok(())
     }
 }
@@ -116,15 +111,26 @@ impl DuneWriter for HTMLWriter {
                 };
                 // FIXME: Remove unwrap
                 let rendered = structure.render().unwrap();
-                self.create_directory(path);
+                fs::create_dir_all(path.parent().unwrap());
                 self.create_file(path, &rendered);
             },
-            &DuneAction::List(ref path, ref pagination, ref title, ref posts, true) => {
-                println!("Overview: {:?}: {:?}", path, title);
+            &DuneAction::List(ref path, ref pagination, ref title, ref posts, overview) => {
+                let base = self.base_template(database, router);
+                let rendered = match overview {
+                    false => IndexTemplate {
+                        pagination: pagination,
+                        posts: posts,
+                        _parent: base
+                    }.render().unwrap(),
+                    true => OverviewTemplate {
+                        pagination: pagination,
+                        posts: posts,
+                        _parent: base
+                    }.render().unwrap()
+                };
+                fs::create_dir_all(path.parent().unwrap());
+                self.create_file(path, &rendered);
             },
-            &DuneAction::List(ref path, ref pagination, ref title, ref posts, false) => {
-                println!("Index: {:?}: {:?}", path, title);
-            }
         };
         Ok(())
     }

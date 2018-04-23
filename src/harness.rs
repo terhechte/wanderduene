@@ -90,6 +90,7 @@ impl Dune {
 
     fn execute<Writer: DuneWriter, Router: DuneRouter>(&self, writer: &Writer, router: &Router) {
         for action in self.receiver.actions() {
+            println!("Writing: {}", &action);
             writer.write(&self.database, &action, router);
         }
     }
@@ -565,16 +566,16 @@ fn testing() {
     struct TestingRouter;
     impl DuneRouter for TestingRouter {
         fn post(post: &DunePost) -> String {
-            format!("{}/{}/{}/{}", post.released.year, post.released.month, post.released.day, post.path)
+            format!("/{}/{}/{}/{}", post.released.year, post.released.month, post.released.day, post.path)
         }
         fn tag(tag: &str) -> String {
-            format!("tag/{}", tag)
+            format!("/tags/{}", tag)
         }
         fn keyword(keyword: &str) -> String {
-            format!("keyword/{}", keyword)
+            format!("/keywords/{}", keyword)
         }
         fn overview_pagename<PathBuilder: DunePathBuilder>(builder: &PathBuilder) -> String {
-            "overview.html".to_owned()
+            "index.html".to_owned()
         }
         fn index_pagename<PathBuilder: DunePathBuilder>(builder: &PathBuilder) -> String {
             "index.html".to_owned()
