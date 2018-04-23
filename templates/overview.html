@@ -10,8 +10,8 @@
 {% block content %}
   Overview<br/>
 <ul>
-{% for entry in entries %}
-    <li> <a href="{{ router::post(post) }}"> {{  post.released.year }} {{ entry.title }}</a></li>
+{% for post in posts %}
+    <li> <a href="{{ router.post(post) }}"> {{  post.released.year }} {{ post.title }}</a></li>
 {% endfor %}
 </ul>
 

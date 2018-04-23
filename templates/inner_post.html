@@ -3,10 +3,10 @@
   {{ post.contents }}
   </div>
 
-{% for tag in tags %}
+{% for tag in base.tags %}
   <span>
-      <a href="{{tag}}">
-      {{ tag }}
+      <a href="{{tag.identifier}}">
+      {{ tag.identifier }} ({{tag.count}})
       </a>
   </span>
 {% endfor %}
