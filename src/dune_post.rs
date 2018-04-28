@@ -1,4 +1,5 @@
 use std::cmp::{Ord, Ordering, PartialOrd, Eq, PartialEq};
+use utils::strip_tags;
 
 #[derive(Debug, Clone)]
 pub struct DunePost {
@@ -11,6 +12,15 @@ pub struct DunePost {
     pub keywords: Vec<String>,
     pub description: String,
     pub enabled: bool
+}
+
+impl DunePost {
+    pub fn shortened_contents(&self, len: usize) -> String {
+        let content_len = self.contents.len();
+        let len = ::std::cmp::min(len, content_len);
+        let mut stripped = strip_tags(&self.contents);
+        stripped.split_off(len).to_string()
+    }
 }
 
 #[derive(Debug, Clone)]

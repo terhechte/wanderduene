@@ -15,8 +15,32 @@ pub struct DunePagination {
     /// Page Number, Identifier
     pub next: Option<(i32, Option<String>)>,
     /// Page Number, Title, Route
-    pub previous: Option<(i32, Option<String>)>
+    pub previous: Option<(i32, Option<String>)>,
+    /// the path for which this pagination is needed
+    pub path: String
 }
+
+impl DunePagination {
+    pub fn current(&self) -> i32 {
+        self.current.0
+    }
+
+    pub fn next(&self) -> Option<i32> {
+        self.next.clone().map(|e|e.0)
+    }
+
+    pub fn previous(&self) -> Option<i32> {
+        self.previous.clone().map(|e|e.0)
+    }
+}
+
+/**
+- No Pagination
+- Pagination
+  - Only Current
+  - Current and Previous
+  - Current and Next
+*/
 
 #[derive(Debug)]
 pub enum DuneAction {

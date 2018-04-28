@@ -14,4 +14,20 @@
 {% endfor %}
 </ul>
 
+pages begin</br>
+
+{% match pagination %}
+{% when Option::Some with (page) %}
+page: {{ page.current() }}
+    {% if page.previous().is_some() -%}
+previous: <a href="{{ router.page(page.path.as_ref(), page.previous().unwrap()) }}"> {{ page.previous().unwrap() }}</a>
+    {%- endif %}
+    {% if page.next().is_some() -%}
+                     next: <a href="{{ router.page(page.path.as_ref(), page.next().unwrap()) }}"> {{ page.next().unwrap() }}</a>
+    {%- endif %}
+{% else %}
+No page
+{% endmatch %}
+
+
 {% endblock %}

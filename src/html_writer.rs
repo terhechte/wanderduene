@@ -16,9 +16,17 @@ use dune_base::DuneBase;
 use dune_post::DunePost;
 use dune_router::DuneRouter;
 
+use std::ops::Deref;
+
 pub struct HTMLWriter {
     configuration: Rc<Configuration>
 }
+
+/// A better wrapper around the pagination for usage within a template
+/*enum Pagination {
+    None,
+
+}*/
 
 /// The templates that define the HTML.
 /// All the shared structures are part of this base html.
@@ -39,6 +47,14 @@ struct IndexTemplate<'a, Router> where Router: 'a + DuneRouter {
     posts: &'a Vec<DunePost>,
     _parent: BaseTemplate<'a, Router>
 }
+
+/*
+impl<'a, Router> IndexTemplate<'a, Router> where Router: 'a + DuneRouter {
+    pub fn next(&self) -> Option<i32> {
+        self.pagination.clone().and_then(|p|p.next).map(|p|p.0)
+    }
+}*/
+
 /// This template is used for rendering an Overview
 /// I.e. a list of posts where each post is only the headline
 #[derive(Template)]
@@ -70,6 +86,9 @@ impl<T> RouterWraper<T> where T: DuneRouter {
     }
     fn tag(&self, tag: &str) -> String {
         T::tag(tag)
+    }
+    fn page(&self, folder: &str, page: &i32) -> String {
+        T::page(folder, page)
     }
     fn keyword(&self, keyword: &str) -> String {
         T::keyword(keyword)
@@ -115,6 +134,7 @@ impl DuneWriter for HTMLWriter {
                 self.create_file(path, &rendered);
             },
             &DuneAction::List(ref path, ref pagination, ref title, ref posts, overview) => {
+                println!("path: {:?}, pag: {}", &path, &pagination.is_some());
                 let base = self.base_template(database, router);
                 let rendered = match overview {
                     false => IndexTemplate {

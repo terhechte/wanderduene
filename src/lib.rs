@@ -1,5 +1,6 @@
 extern crate sha2;
 #[macro_use] extern crate askama;
+extern crate ammonia;
 
 mod org_parser;
 
@@ -10,6 +11,7 @@ mod html_writer;
 mod dune_base;
 mod traits;
 mod dune_router;
+mod utils;
 pub mod dune_post;
 
 pub fn make() {

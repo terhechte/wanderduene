@@ -11,7 +11,11 @@
   Overview<br/>
 <ul>
 {% for post in posts %}
-    <li> <a href="{{ router.post(post) }}"> {{  post.released.year }} {{ post.title }}</a></li>
+    <li> <a href="{{ router.post(post) }}"> {{  post.released.year }} {{ post.title }}</a>
+        <p>
+            short: {{ post.shortened_contents(255) }}...
+        </p>
+    </li>
 {% endfor %}
 </ul>
 

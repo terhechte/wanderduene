@@ -102,7 +102,7 @@ impl DunePost {
 
     fn render_pandoc(path: &Path, has_toc: bool) -> Result<String, Box<Error>> {
         spit("/tmp/htmltemplate.html", PANDOC_HTML);
-        let mut args: Vec<&str> = vec!["--template", "/tmp/htmltemplate.html", "-s"];
+        let mut args: Vec<&str> = vec!["--template", "/tmp/htmltemplate.html", "-s", "--highlight-style", "zenburn"];
         if has_toc {
             args.push("--toc");
         }
