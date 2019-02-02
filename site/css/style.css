@@ -6,6 +6,18 @@ body, html {
     background-color: #f4f4f4;
 }
 
+.image-is-150 {
+    width: 150px;
+    height: 150px;
+}
+
+.author {
+    margin: 25px;
+    margin-bottom: 0px;
+    padding-top: 20px;
+    margin-top: 5px;
+}
+
 .content blockquote, .content pre.sourceCode {
     background-color: #fefefe;
 }
@@ -47,7 +59,6 @@ body, html {
   -webkit-transition: all 0.2s ease-out;
   -moz-transition: all 0.2s ease-out;
   transition: all 0.2s ease-out;
-  overflow: hidden;
   text-overflow: ellipsis;
 }
 

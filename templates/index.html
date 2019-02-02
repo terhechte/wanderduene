@@ -8,11 +8,71 @@
 {% endblock %}
 
 {% block content %}
-<ul>
+
+  <div class="columns">
+      <div class="column">
+          <div class="tabs">
+              <ul>
+                  <li class="is-active">
+                      <a><i class="fas fa-anchor"></i>&nbsp; Blog</a></li>
+                  <li>
+                      <a><i class="fas fa-couch"></i>&nbsp; About</a></li>
+                  <li>
+                      <a><i class="fas fa-coffee"></i>&nbsp; Projects</a></li>
+              </ul>
+          </div>
+      </div>
+      <div class="column is-narrow">
+          <div class="buttons has-addons is-hidden-mobile">
+              <span class="button is-success is-selected">
+                  <i class="fas fa-th-large"></i>
+              </span>
+              <span class="button">
+                  <i class="fas fa-list"></i>
+              </span>
+          </div>
+      </div>
+  </div>
+
+  <div class="columns is-mobile is-hidden-tablet">
+      <div class="column">
+          <div class="field">
+              <div class="control is-small">
+                  <input class="input is-rounded is-small" type="text" placeholder="search">
+              </div>
+          </div>
+      </div>
+      <div class="column is-narrow">
+          <div class="buttons has-addons">
+              <span class="button is-success is-selected">
+                  <i class="fas fa-th-large"></i>
+              </span>
+              <span class="button">
+                  <i class="fas fa-list"></i>
+              </span>
+          </div>
+      </div>
+  </div>
+
+  <div class="tile is-ancestor">
+      <div class="tile is-6 is-vertical is-parent">
 {% for post in posts %}
-    <li> <a href="{{router.post(post)}}"> {{post.released.year}} {{post.title}}</a></li>
+        <div class="tile is-child article-box">
+         <figure class="image">
+          <img src="/content/2015-11-30-reduce-all-the-things-feature-image.jpg">
+         </figure>
+         <p class="subtitle is-7 article-tile-meta-box">
+          {{post.released.year}}
+          <span><a>#cocoa</a>, <a>#ios</a>, ...</span>
+         </p>
+         <h4 class="title is-4"><a href="{{router.post(post)}}">{{post.title}}/a></h4>
+         <p class="subtitle is-6">
+          Mixing optional and non-optional functions in a 
+         </p>
+        </div>
 {% endfor %}
-</ul>
+      </div>
+  </div>
 
 pages begin</br>
 
